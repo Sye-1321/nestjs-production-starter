@@ -1,0 +1,4 @@
+* text=auto eol=lf
+
+# Frozen byte-identical architecture contract; do not rewrite for whitespace.
+docs/spec/v1-contract.md -whitespace
