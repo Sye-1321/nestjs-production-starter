@@ -6,16 +6,16 @@ The project is intentionally built milestone by milestone. Production claims are
 
 ## Milestone status
 
-| Milestone | Status |
-| --- | --- |
-| M0 — Repository Foundation | Complete |
-| M1 — Configuration, Lifecycle and Health | Complete |
-| M2 — HTTP Boundary, Errors, Context and Logging | Next |
-| M3 — PostgreSQL and Tiny Task Feature | Planned |
-| M4 — Readiness Transitions and Metrics | Planned |
-| M5 — Shutdown and Failure Hardening | Planned |
-| M6 — Container and Supply Chain | Planned |
-| M7 — Documentation and v1 Release Review | Planned |
+| Milestone                                       | Status   |
+| ----------------------------------------------- | -------- |
+| M0 — Repository Foundation                      | Complete |
+| M1 — Configuration, Lifecycle and Health        | Complete |
+| M2 — HTTP Boundary, Errors, Context and Logging | Next     |
+| M3 — PostgreSQL and Tiny Task Feature           | Planned  |
+| M4 — Readiness Transitions and Metrics          | Planned  |
+| M5 — Shutdown and Failure Hardening             | Planned  |
+| M6 — Container and Supply Chain                 | Planned  |
+| M7 — Documentation and v1 Release Review        | Planned  |
 
 ## Implemented through M1
 
@@ -32,7 +32,7 @@ The repository currently provides:
 - database-independent liveness at `GET /health/live`;
 - fail-closed readiness at `GET /health/ready`;
 - unit evidence for configuration, lifecycle, readiness, and shutdown invariants;
-- child-process evidence for startup failure, health behavior, graceful SIGTERM, and termination during `BOOTING`.
+- child-process evidence for startup failure, health behavior, graceful `SIGTERM`, and termination during `BOOTING`.
 
 Readiness intentionally remains unavailable in M1 because the real PostgreSQL readiness probe belongs to a later milestone.
 
@@ -42,7 +42,7 @@ Readiness intentionally remains unavailable in M1 because the real PostgreSQL re
 - development and verification baseline: Node.js `24.19.0`
 - npm: `11.17.0`
 - NestJS: `11.1.28`
-- default Express adapter
+- Express adapter
 - TypeScript: strict mode
 - ESM package semantics
 - `NodeNext` module resolution
@@ -61,3 +61,27 @@ npm run typecheck
 npm run build
 npm run test:unit
 npm run test:process
+```
+
+The process suite includes Linux-specific signal semantics. Windows runs provide useful development evidence, while authoritative POSIX `SIGTERM` behavior is verified on Linux.
+
+## Scope boundary
+
+The repository does not yet implement later v1 milestones, including:
+
+- PostgreSQL and Prisma persistence;
+- the Task API;
+- request context propagation;
+- structured application logging;
+- RFC 9457 Problem Details;
+- HTTP hardening and timeout policy;
+- metrics;
+- force-shutdown behavior;
+- Docker image hardening;
+- supply-chain CI and release checks.
+
+These capabilities are introduced only in their assigned milestones.
+
+The frozen v1 implementation contract is maintained at:
+
+`docs/spec/v1-contract.md`
