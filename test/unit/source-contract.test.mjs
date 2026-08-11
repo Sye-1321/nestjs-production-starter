@@ -74,3 +74,37 @@ test('ShutdownCoordinator is the only production SIGTERM/SIGINT listener owner',
   assert.equal(owners[0].sourcePath, SHUTDOWN_COORDINATOR);
   assert.deepEqual(owners[0].signals.sort(), ['SIGINT', 'SIGTERM']);
 });
+
+test('main is the only startup-failure logging owner', async () => {
+  const callPattern = /\.startupFailed\(/gu;
+  const callOwners = [];
+
+  for (const sourcePath of await productionSources()) {
+    if (sourcePath.endsWith('bootstrap-logger.ts')) {
+      continue;
+    }
+
+    const source = await readFile(sourcePath, 'utf8');
+    if (callPattern.test(source)) {
+      callOwners.push(
+        path.relative(REPOSITORY_ROOT, sourcePath).split(path.sep).join('/'),
+      );
+    }
+    callPattern.lastIndex = 0;
+  }
+
+  assert.deepEqual(callOwners, ['src/main.ts']);
+});
+
+test('production source does not install an uncaughtException continuation handler', async () => {
+  for (const sourcePath of await productionSources()) {
+    const source = await readFile(sourcePath, 'utf8');
+    assert.equal(
+      /process\.(?:on|once|addListener|prependListener|prependOnceListener)\(\s*['"]uncaughtException['"]/u.test(
+        source,
+      ),
+      false,
+      `${path.relative(REPOSITORY_ROOT, sourcePath)} must not own uncaughtException continuation`,
+    );
+  }
+});

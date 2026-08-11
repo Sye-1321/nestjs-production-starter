@@ -1,14 +1,21 @@
 import 'reflect-metadata';
 
-import { NestFactory } from '@nestjs/core';
+import { BootstrapLogger } from './bootstrap/bootstrap-logger.js';
+import { bootstrap } from './bootstrap/bootstrap.js';
+import { parseEnvironment } from './config/env.validation.js';
 
-import { AppModule } from './app.module.js';
+async function run(): Promise<void> {
+  let logger: BootstrapLogger | undefined;
 
-async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
-
-  await app.init();
-  await app.close();
+  try {
+    const config = parseEnvironment(process.env);
+    logger = new BootstrapLogger();
+    await bootstrap({ config, logger });
+  } catch (error) {
+    const failureLogger = logger ?? new BootstrapLogger();
+    failureLogger.startupFailed(error);
+    process.exitCode = 1;
+  }
 }
 
-void bootstrap();
+void run();

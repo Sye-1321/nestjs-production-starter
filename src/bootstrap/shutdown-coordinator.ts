@@ -8,6 +8,7 @@ export interface ShutdownContext {
 }
 
 export type ShutdownExecution = (context: ShutdownContext) => Promise<void>;
+export type ShutdownFailureHandler = (error: unknown) => void;
 
 type Clock = () => number;
 
@@ -15,6 +16,7 @@ export interface ShutdownCoordinatorOptions {
   readonly lifecycle: Lifecycle;
   readonly shutdownTimeoutMs: number;
   readonly executeShutdown: ShutdownExecution;
+  readonly onShutdownFailure?: ShutdownFailureHandler;
   readonly now?: Clock;
 }
 
@@ -22,24 +24,27 @@ export class ShutdownCoordinator {
   private readonly lifecycle: Lifecycle;
   private readonly shutdownTimeoutMs: number;
   private readonly executeShutdown: ShutdownExecution;
+  private readonly onShutdownFailure: ShutdownFailureHandler;
   private readonly now: Clock;
 
   private handlersInstalled = false;
+  private signalFailureObserved = false;
   private deadlineAt: number | undefined;
   private shutdownSequence: Promise<void> | undefined;
 
   private readonly sigtermHandler = (): void => {
-    void this.requestShutdown('SIGTERM');
+    this.requestShutdownFromSignal('SIGTERM');
   };
 
   private readonly sigintHandler = (): void => {
-    void this.requestShutdown('SIGINT');
+    this.requestShutdownFromSignal('SIGINT');
   };
 
   public constructor(options: ShutdownCoordinatorOptions) {
     this.lifecycle = options.lifecycle;
     this.shutdownTimeoutMs = options.shutdownTimeoutMs;
     this.executeShutdown = options.executeShutdown;
+    this.onShutdownFailure = options.onShutdownFailure ?? (() => undefined);
     this.now = options.now ?? Date.now;
   }
 
@@ -86,5 +91,25 @@ export class ShutdownCoordinator {
 
     this.shutdownSequence = sequence;
     return sequence;
+  }
+
+  private requestShutdownFromSignal(signal: ShutdownSignal): void {
+    let sequence: Promise<void>;
+
+    try {
+      sequence = this.requestShutdown(signal);
+    } catch (error) {
+      this.onShutdownFailure(error);
+      return;
+    }
+
+    if (this.signalFailureObserved) {
+      return;
+    }
+
+    this.signalFailureObserved = true;
+    void sequence.catch((error: unknown) => {
+      this.onShutdownFailure(error);
+    });
   }
 }

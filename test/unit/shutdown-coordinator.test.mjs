@@ -1,6 +1,7 @@
-import process from 'node:process';
 import assert from 'node:assert/strict';
+import process from 'node:process';
 import test from 'node:test';
+import { setImmediate } from 'node:timers';
 
 import { Lifecycle } from '../../dist/bootstrap/lifecycle.js';
 import { ShutdownCoordinator } from '../../dist/bootstrap/shutdown-coordinator.js';
@@ -178,4 +179,41 @@ test('successful shutdown execution transitions lifecycle to STOPPED', async () 
 
   assert.equal(executions, 1);
   assert.equal(lifecycle.state, 'STOPPED');
+});
+
+test('signal-triggered shutdown rejection is observed exactly once', async (t) => {
+  const lifecycle = new Lifecycle();
+  const failures = [];
+  const coordinator = new ShutdownCoordinator({
+    lifecycle,
+    shutdownTimeoutMs: 1_000,
+    executeShutdown: async () => {
+      throw new Error('shutdown failed');
+    },
+    onShutdownFailure: (error) => failures.push(error),
+  });
+  const sigtermBefore = new Set(process.listeners('SIGTERM'));
+  const sigintBefore = new Set(process.listeners('SIGINT'));
+
+  t.after(() => coordinator.removeSignalHandlers());
+  coordinator.installSignalHandlers();
+
+  const sigtermHandler = process
+    .listeners('SIGTERM')
+    .find((listener) => !sigtermBefore.has(listener));
+  const sigintHandler = process
+    .listeners('SIGINT')
+    .find((listener) => !sigintBefore.has(listener));
+
+  assert.ok(sigtermHandler);
+  assert.ok(sigintHandler);
+
+  sigtermHandler();
+  sigintHandler();
+
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(failures.length, 1);
+  assert.match(failures[0].message, /shutdown failed/u);
+  assert.equal(lifecycle.state, 'DRAINING');
 });
