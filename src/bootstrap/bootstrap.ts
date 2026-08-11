@@ -9,10 +9,15 @@ import { BootstrapLogger } from './bootstrap-logger.js';
 import { Lifecycle } from './lifecycle.js';
 import { ShutdownCoordinator } from './shutdown-coordinator.js';
 
+export interface BootstrapProcessTestSeam {
+  afterSignalHandlersInstalled(isBooting: () => boolean): Promise<void>;
+}
+
 export interface BootstrapOptions {
   readonly config: AppConfig;
   readonly logger: BootstrapLogger;
   readonly readinessProbe?: ReadinessProbe;
+  readonly processTestSeam?: BootstrapProcessTestSeam;
 }
 
 function isBooting(lifecycle: Lifecycle): boolean {
@@ -55,6 +60,14 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
   coordinator.installSignalHandlers();
 
   try {
+    await options.processTestSeam?.afterSignalHandlersInstalled(() =>
+      isBooting(lifecycle),
+    );
+
+    if (!isBooting(lifecycle)) {
+      return;
+    }
+
     app = await NestFactory.create(
       AppModule.forRoot(options.config, lifecycle, options.readinessProbe),
       {
