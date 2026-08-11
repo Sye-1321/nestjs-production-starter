@@ -1,11 +1,16 @@
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { Server } from 'node:http';
 
 import { AppModule } from '../app.module.js';
 import type { AppConfig } from '../config/config.types.js';
 import type { ReadinessProbe } from '../platform/health/readiness-probe.js';
 import { BootstrapLogger } from './bootstrap-logger.js';
+import {
+  configureHttpApplication,
+  configureHttpServer,
+} from './http-server.js';
 import { Lifecycle } from './lifecycle.js';
 import { ShutdownCoordinator } from './shutdown-coordinator.js';
 
@@ -26,7 +31,7 @@ function isBooting(lifecycle: Lifecycle): boolean {
 
 export async function bootstrap(options: BootstrapOptions): Promise<void> {
   const lifecycle = new Lifecycle();
-  let app: INestApplication | undefined;
+  let app: NestExpressApplication | undefined;
   let server: Server | undefined;
   let releasePreListen: (() => void) | undefined;
   let preListenReleased = false;
@@ -68,10 +73,11 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
       return;
     }
 
-    app = await NestFactory.create(
+    app = await NestFactory.create<NestExpressApplication>(
       AppModule.forRoot(options.config, lifecycle, options.readinessProbe),
       {
         abortOnError: false,
+        bodyParser: false,
         logger: false,
       },
     );
@@ -80,8 +86,10 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
       return;
     }
 
+    server = app.getHttpServer();
+    configureHttpServer(server);
+    configureHttpApplication(app);
     await app.init();
-    server = app.getHttpServer() as Server;
 
     if (!isBooting(lifecycle)) {
       return;
