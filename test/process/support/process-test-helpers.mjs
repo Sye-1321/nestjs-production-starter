@@ -19,6 +19,13 @@ export const BOOTING_FIXTURE = path.join(
   'support',
   'booting-fixture.mjs',
 );
+export const ERROR_LOG_CANARY_FIXTURE = path.join(
+  REPOSITORY_ROOT,
+  'test',
+  'process',
+  'support',
+  'error-log-canary-fixture.mjs',
+);
 
 export const STARTUP_WAIT_MS = 20_000;
 export const EXIT_WAIT_MS = 10_000;
@@ -31,6 +38,8 @@ const POLL_INTERVAL_MS = 10;
 const PORT_POLL_INTERVAL_MS = 1;
 const CONNECT_TIMEOUT_MS = 100;
 const HTTP_TIMEOUT_MS = 500;
+const EXTENDED_HTTP_TIMEOUT_MS = 5_000;
+const RAW_HTTP_TIMEOUT_MS = 2_000;
 const CLEANUP_WAIT_MS = 500;
 
 export async function getAvailablePort() {
@@ -190,33 +199,97 @@ export function waitForExit(
   });
 }
 
-export function requestPath(port, pathname) {
+export async function requestPath(port, pathname) {
+  const { statusCode, body } = await requestHttp(port, {
+    pathname,
+    timeoutMs: HTTP_TIMEOUT_MS,
+  });
+  return { statusCode, body };
+}
+
+export function requestHttp(
+  port,
+  {
+    pathname = '/',
+    method = 'GET',
+    headers = {},
+    body,
+    timeoutMs = EXTENDED_HTTP_TIMEOUT_MS,
+  } = {},
+) {
   return new Promise((resolve, reject) => {
     const req = request(
       {
         host: '127.0.0.1',
         port,
         path: pathname,
-        method: 'GET',
+        method,
+        headers,
         agent: false,
       },
       (response) => {
         response.setEncoding('utf8');
-        let body = '';
+        let responseBody = '';
         response.on('data', (chunk) => {
-          body += chunk;
+          responseBody += chunk;
         });
         response.on('end', () => {
-          resolve({ statusCode: response.statusCode, body });
+          resolve({
+            statusCode: response.statusCode,
+            headers: response.headers,
+            body: responseBody,
+          });
         });
       },
     );
 
-    req.setTimeout(HTTP_TIMEOUT_MS, () => {
+    req.setTimeout(timeoutMs, () => {
       req.destroy(new Error('Process-test HTTP request timed out'));
     });
     req.once('error', reject);
-    req.end();
+    req.end(body);
+  });
+}
+
+export function rawHttpRequest(
+  port,
+  rawRequest,
+  timeoutMs = RAW_HTTP_TIMEOUT_MS,
+) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let rawResponse = '';
+    const socket = net.createConnection({ host: '127.0.0.1', port });
+
+    const fail = (error) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      socket.destroy();
+      reject(error);
+    };
+
+    socket.setEncoding('latin1');
+    socket.setTimeout(timeoutMs, () => {
+      fail(new Error('Process-test raw HTTP request timed out'));
+    });
+    socket.on('data', (chunk) => {
+      rawResponse += chunk;
+    });
+    socket.once('connect', () => {
+      socket.end(rawRequest, 'latin1');
+    });
+    socket.once('error', fail);
+    socket.once('end', () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      resolve(parseRawHttpResponse(rawResponse));
+    });
   });
 }
 
@@ -304,6 +377,68 @@ export function structuredEvents(output, eventName) {
       return [];
     }
   });
+}
+
+export async function waitForStructuredEvents(
+  output,
+  eventName,
+  { count, predicate = () => true, timeoutMs = STARTUP_WAIT_MS },
+) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const events = structuredEvents(output(), eventName).filter(predicate);
+    if (events.length >= count) {
+      return events;
+    }
+
+    await delay(POLL_INTERVAL_MS);
+  }
+
+  throw new Error(
+    `Child did not emit ${String(count)} matching ${eventName} events within ${String(timeoutMs)} ms`,
+  );
+}
+
+function parseRawHttpResponse(rawResponse) {
+  const separatorIndex = rawResponse.indexOf('\r\n\r\n');
+  if (separatorIndex < 0) {
+    throw new Error('Raw HTTP response did not contain a header terminator');
+  }
+
+  const headerBlock = rawResponse.slice(0, separatorIndex);
+  const body = rawResponse.slice(separatorIndex + 4);
+  const [statusLine, ...headerLines] = headerBlock.split('\r\n');
+  const statusMatch = /^HTTP\/1\.[01] (\d{3})(?: |$)/u.exec(statusLine);
+  if (statusMatch === null) {
+    throw new Error('Raw HTTP response contained an invalid status line');
+  }
+
+  const headers = {};
+  for (const line of headerLines) {
+    const separator = line.indexOf(':');
+    if (separator <= 0) {
+      continue;
+    }
+
+    const name = line.slice(0, separator).trim().toLowerCase();
+    const value = line.slice(separator + 1).trim();
+    const existing = headers[name];
+
+    if (existing === undefined) {
+      headers[name] = value;
+    } else if (Array.isArray(existing)) {
+      existing.push(value);
+    } else {
+      headers[name] = [existing, value];
+    }
+  }
+
+  return {
+    statusCode: Number(statusMatch[1]),
+    headers,
+    body,
+  };
 }
 
 function hasExited(child) {

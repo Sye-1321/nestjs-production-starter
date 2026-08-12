@@ -422,7 +422,7 @@ test('request completion emits once on finish and never fabricates close as comp
   assert.equal(records.length, 1);
 });
 
-test('100 interleaved request contexts keep completion IDs isolated', async () => {
+test('100 interleaved request contexts isolate success, rejection, and subsequent context', async () => {
   const storage = new RequestContextStorage();
   const records = [];
   const logger = {
@@ -434,12 +434,14 @@ test('100 interleaved request contexts keep completion IDs isolated', async () =
     },
   };
   const middleware = new RequestLoggingMiddleware(storage, logger);
+  const rejectedIndex = 37;
+  const rejectedRequestId = `interleaved-${String(rejectedIndex).padStart(3, '0')}`;
   const requestIds = Array.from(
     { length: 100 },
     (_, index) => `interleaved-${String(index).padStart(3, '0')}`,
   );
 
-  await Promise.all(
+  const results = await Promise.allSettled(
     requestIds.map(async (requestId, index) => {
       const run = storage.run({ requestId, abortSignal: {} }, async () => {
         const response = responseDouble();
@@ -452,14 +454,36 @@ test('100 interleaved request contexts keep completion IDs isolated', async () =
         await Promise.resolve();
         await delay(index % 7);
         assert.equal(storage.get().requestId, requestId);
-        response.emit('finish');
-        await Promise.resolve();
-        assert.equal(storage.get().requestId, requestId);
+
+        try {
+          if (index === rejectedIndex) {
+            await delay(0);
+            assert.equal(storage.get().requestId, rejectedRequestId);
+            throw new Error('deliberate request-context rejection');
+          }
+        } finally {
+          response.emit('finish');
+          await Promise.resolve();
+          assert.equal(storage.get().requestId, requestId);
+        }
       });
 
-      await run;
-      assert.equal(storage.get(), undefined);
+      try {
+        await run;
+      } finally {
+        assert.equal(storage.get(), undefined);
+      }
     }),
+  );
+
+  assert.equal(
+    results.filter((result) => result.status === 'rejected').length,
+    1,
+  );
+  assert.equal(results[rejectedIndex].status, 'rejected');
+  assert.match(
+    results[rejectedIndex].reason.message,
+    /deliberate request-context rejection/u,
   );
 
   assert.equal(records.length, 100);
@@ -468,4 +492,26 @@ test('100 interleaved request contexts keep completion IDs isolated', async () =
     [...requestIds].sort(),
   );
   assert.equal(storage.get(), undefined);
+
+  const subsequentRequestId = 'subsequent-after-rejection';
+  await storage.run(
+    { requestId: subsequentRequestId, abortSignal: {} },
+    async () => {
+      const response = responseDouble();
+      middleware.use(
+        requestDouble({ route: { path: '/v1/tasks' } }),
+        response,
+        () => undefined,
+      );
+
+      await Promise.resolve();
+      await delay(0);
+      assert.equal(storage.get().requestId, subsequentRequestId);
+      assert.notEqual(storage.get().requestId, rejectedRequestId);
+      response.emit('finish');
+    },
+  );
+  assert.equal(storage.get(), undefined);
+  assert.equal(records.length, 101);
+  assert.equal(records.at(-1).requestId, subsequentRequestId);
 });

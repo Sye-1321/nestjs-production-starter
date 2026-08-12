@@ -16,7 +16,7 @@
     "pretest:unit": "npm run build",
     "test:unit": "node --test \"test/unit/*.test.mjs\"",
     "pretest:process": "npm run build",
-    "test:process": "node --test \"test/process/*.test.mjs\""
+    "test:process": "node --test --test-concurrency=1 \"test/process/*.test.mjs\""
   },
   "dependencies": {
     "@nestjs/common": "11.1.28",
