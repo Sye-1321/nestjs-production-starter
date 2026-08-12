@@ -64,6 +64,16 @@ function responseDouble(statusCode = 200) {
   return response;
 }
 
+function drainingProblemBoundary() {
+  return {
+    respond(response, code) {
+      assert.equal(code, 'DEPENDENCY_UNAVAILABLE');
+      response.statusCode = 503;
+      response.end();
+    },
+  };
+}
+
 function requestDouble(overrides = {}) {
   return {
     method: 'GET',
@@ -359,7 +369,10 @@ test('DRAINING gate completion is logged before downstream execution can begin',
     },
   };
   const loggingMiddleware = new RequestLoggingMiddleware(storage, logger);
-  const drainingGate = new DrainingGateMiddleware(lifecycle);
+  const drainingGate = new DrainingGateMiddleware(
+    lifecycle,
+    drainingProblemBoundary(),
+  );
   const request = requestDouble({ method: 'POST', path: '/v1/tasks' });
   const response = responseDouble();
   let downstreamExecuted = false;

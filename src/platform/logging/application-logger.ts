@@ -4,10 +4,18 @@ import type { LogLevel } from '../../config/config.types.js';
 
 const SERVICE_NAME = 'nestjs-production-starter';
 const REQUEST_COMPLETION_EVENT = 'http_request_completed';
+const REQUEST_FAILURE_EVENT = 'http_request_failed';
 
 export type RequestLogLevel = 'debug' | 'info';
 export type LoggedHttpMethod =
   'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS' | 'OTHER';
+export type HttpFailureErrorType =
+  | 'Error'
+  | 'TypeError'
+  | 'RangeError'
+  | 'ReferenceError'
+  | 'SyntaxError'
+  | 'UnknownError';
 
 export interface RequestCompletion {
   readonly requestId: string;
@@ -15,6 +23,13 @@ export interface RequestCompletion {
   readonly route: string;
   readonly statusCode: number;
   readonly durationMs: number;
+}
+
+export interface HttpRequestFailure {
+  readonly requestId: string;
+  readonly errorType: HttpFailureErrorType;
+  readonly method: LoggedHttpMethod;
+  readonly route: string;
 }
 
 export class ApplicationLogger {
@@ -48,5 +63,15 @@ export class ApplicationLogger {
     }
 
     this.logger.info(record);
+  }
+
+  public httpRequestFailed(failure: HttpRequestFailure): void {
+    this.logger.error({
+      event: REQUEST_FAILURE_EVENT,
+      request_id: failure.requestId,
+      error_type: failure.errorType,
+      method: failure.method,
+      route: failure.route,
+    });
   }
 }

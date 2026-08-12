@@ -27,26 +27,28 @@ test('raw Node HTTP server receives the exact fixed transport policy', () => {
   });
 });
 
-test('HTTP application installs context, request logging, Helmet, drain gate, then the exact JSON bound', () => {
+test('HTTP application installs the complete pre-router policy in frozen order', () => {
   const registrations = [];
-  let requestContextCalls = 0;
-  let requestLoggingCalls = 0;
-  let drainingGateCalls = 0;
-  const requestContextMiddleware = {
-    use() {
-      requestContextCalls += 1;
-    },
-  };
-  const requestLoggingMiddleware = {
-    use() {
-      requestLoggingCalls += 1;
-    },
-  };
-  const drainingGateMiddleware = {
-    use() {
-      drainingGateCalls += 1;
-    },
-  };
+  const calls = [];
+  const middleware = (name, arity = 0) => ({
+    use:
+      arity === 4
+        ? function use(error, request, response, next) {
+            void error;
+            void request;
+            void response;
+            void next;
+            calls.push(name);
+          }
+        : function use() {
+            calls.push(name);
+          },
+  });
+  const requestContextMiddleware = middleware('context');
+  const requestLoggingMiddleware = middleware('logging');
+  const drainingGateMiddleware = middleware('draining');
+  const taskContentTypeMiddleware = middleware('content-type');
+  const bodyParserErrorMiddleware = middleware('parser-error', 4);
   const app = {
     use(value) {
       registrations.push({ kind: 'middleware', value });
@@ -63,32 +65,28 @@ test('HTTP application installs context, request logging, Helmet, drain gate, th
     requestContextMiddleware,
     requestLoggingMiddleware,
     drainingGateMiddleware,
+    taskContentTypeMiddleware,
+    bodyParserErrorMiddleware,
   );
 
   assert.equal(JSON_BODY_LIMIT_BYTES, 102_400);
-  assert.equal(registrations.length, 5);
-  for (const registration of registrations.slice(0, 4)) {
-    assert.equal(registration.kind, 'middleware');
-    assert.equal(typeof registration.value, 'function');
-  }
-  assert.deepEqual(registrations[4], {
+  assert.equal(registrations.length, 7);
+  assert.equal(registrations[0].kind, 'middleware');
+  assert.equal(registrations[1].kind, 'middleware');
+  assert.equal(registrations[2].kind, 'middleware');
+  assert.equal(registrations[3].kind, 'middleware');
+  assert.equal(registrations[4].kind, 'middleware');
+  assert.deepEqual(registrations[5], {
     kind: 'body-parser',
     parser: 'json',
     options: { limit: 102_400 },
   });
+  assert.equal(registrations[6].kind, 'middleware');
+  assert.equal(registrations[6].value.length, 4);
 
   registrations[0].value();
-  assert.equal(requestContextCalls, 1);
-  assert.equal(requestLoggingCalls, 0);
-  assert.equal(drainingGateCalls, 0);
-
   registrations[1].value();
-  assert.equal(requestContextCalls, 1);
-  assert.equal(requestLoggingCalls, 1);
-  assert.equal(drainingGateCalls, 0);
-
   registrations[3].value();
-  assert.equal(requestContextCalls, 1);
-  assert.equal(requestLoggingCalls, 1);
-  assert.equal(drainingGateCalls, 1);
+  registrations[4].value();
+  assert.deepEqual(calls, ['context', 'logging', 'draining', 'content-type']);
 });

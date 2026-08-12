@@ -10,6 +10,16 @@ import { DrainingGateMiddleware } from '../../dist/platform/context/draining-gat
 import { RequestContextMiddleware } from '../../dist/platform/context/request-context.middleware.js';
 import { RequestContextStorage } from '../../dist/platform/context/request-context.js';
 
+function drainingProblemBoundary() {
+  return {
+    respond(response, code) {
+      assert.equal(code, 'DEPENDENCY_UNAVAILABLE');
+      response.statusCode = 503;
+      response.end();
+    },
+  };
+}
+
 function responseDouble() {
   const headers = new Map();
   return {
@@ -111,7 +121,10 @@ test('request context is established before a DRAINING business rejection', () =
   lifecycle.beginDraining();
   const storage = new RequestContextStorage();
   const contextMiddleware = new RequestContextMiddleware(storage);
-  const drainingGate = new DrainingGateMiddleware(lifecycle);
+  const drainingGate = new DrainingGateMiddleware(
+    lifecycle,
+    drainingProblemBoundary(),
+  );
   const abortSignal = { source: 'incoming-message' };
   const request = {
     headersDistinct: { 'x-request-id': ['draining-request'] },
@@ -141,7 +154,10 @@ test('DRAINING rejects v1 business requests before downstream execution', () => 
   const lifecycle = new Lifecycle();
   lifecycle.markReady();
   lifecycle.beginDraining();
-  const middleware = new DrainingGateMiddleware(lifecycle);
+  const middleware = new DrainingGateMiddleware(
+    lifecycle,
+    drainingProblemBoundary(),
+  );
 
   for (const path of ['/v1', '/v1/tasks']) {
     const response = responseDouble();
@@ -161,7 +177,10 @@ test('DRAINING rejects v1 business requests before downstream execution', () => 
 test('READY permits v1 business requests to continue', () => {
   const lifecycle = new Lifecycle();
   lifecycle.markReady();
-  const middleware = new DrainingGateMiddleware(lifecycle);
+  const middleware = new DrainingGateMiddleware(
+    lifecycle,
+    drainingProblemBoundary(),
+  );
   const response = responseDouble();
   let downstreamExecuted = false;
 
@@ -178,7 +197,10 @@ test('operational paths remain outside the business DRAINING gate', () => {
   const lifecycle = new Lifecycle();
   lifecycle.markReady();
   lifecycle.beginDraining();
-  const middleware = new DrainingGateMiddleware(lifecycle);
+  const middleware = new DrainingGateMiddleware(
+    lifecycle,
+    drainingProblemBoundary(),
+  );
 
   for (const path of ['/health/live', '/health/ready', '/metrics']) {
     const response = responseDouble();

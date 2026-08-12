@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { Buffer } from 'node:buffer';
 
 const REPOSITORY_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -109,7 +111,7 @@ test('production source does not install an uncaughtException continuation handl
   }
 });
 
-test('production bootstrap installs HTTP policy before application init and listen', async () => {
+test('production bootstrap installs HTTP policy, global pipe, and global filter before init and listen', async () => {
   const source = await readFile(
     path.join(SOURCE_ROOT, 'bootstrap', 'bootstrap.ts'),
     'utf8',
@@ -127,9 +129,27 @@ test('production bootstrap installs HTTP policy before application init and list
   const drainingGateResolveIndex = source.indexOf(
     'app.get(DrainingGateMiddleware)',
   );
+  const contentTypeResolveIndex = source.indexOf(
+    'app.get(TaskContentTypeMiddleware)',
+  );
+  const parserErrorResolveIndex = source.indexOf(
+    'app.get(BodyParserErrorMiddleware)',
+  );
+  const validationResolveIndex = source.indexOf(
+    'app.get(StrictValidationPipe)',
+  );
+  const filterResolveIndex = source.search(
+    /app\.get\(\s*ProblemDetailsExceptionFilter\s*,?\s*\)/u,
+  );
   const getServerIndex = source.indexOf('server = app.getHttpServer();');
   const serverPolicyIndex = source.indexOf('configureHttpServer(server);');
   const applicationPolicyIndex = source.indexOf('configureHttpApplication(');
+  const globalPipeIndex = source.indexOf(
+    'app.useGlobalPipes(strictValidationPipe);',
+  );
+  const globalFilterIndex = source.indexOf(
+    'app.useGlobalFilters(problemDetailsExceptionFilter);',
+  );
   const initIndex = source.indexOf('await app.init();');
   const listenIndex = source.indexOf('await app.listen(options.config.port);');
 
@@ -138,14 +158,20 @@ test('production bootstrap installs HTTP policy before application init and list
   assert.ok(requestContextResolveIndex > createIndex);
   assert.ok(requestLoggingResolveIndex > requestContextResolveIndex);
   assert.ok(drainingGateResolveIndex > requestLoggingResolveIndex);
-  assert.ok(getServerIndex > drainingGateResolveIndex);
+  assert.ok(contentTypeResolveIndex > drainingGateResolveIndex);
+  assert.ok(parserErrorResolveIndex > contentTypeResolveIndex);
+  assert.ok(validationResolveIndex > parserErrorResolveIndex);
+  assert.ok(filterResolveIndex > validationResolveIndex);
+  assert.ok(getServerIndex > filterResolveIndex);
   assert.ok(serverPolicyIndex > getServerIndex);
   assert.ok(applicationPolicyIndex > serverPolicyIndex);
-  assert.ok(initIndex > applicationPolicyIndex);
+  assert.ok(globalPipeIndex > applicationPolicyIndex);
+  assert.ok(globalFilterIndex > globalPipeIndex);
+  assert.ok(initIndex > globalFilterIndex);
   assert.ok(listenIndex > initIndex);
 });
 
-test('HTTP application policy orders context, request logging, Helmet, drain gate, then JSON parsing', async () => {
+test('HTTP application policy orders context, logging, Helmet, drain, media type, parser, and parser errors', async () => {
   const source = await readFile(
     path.join(SOURCE_ROOT, 'bootstrap', 'http-server.ts'),
     'utf8',
@@ -161,8 +187,14 @@ test('HTTP application policy orders context, request logging, Helmet, drain gat
   const drainingGateIndex = source.indexOf(
     'app.use(drainingGateMiddleware.use.bind(drainingGateMiddleware));',
   );
+  const contentTypeIndex = source.indexOf(
+    'app.use(taskContentTypeMiddleware.use.bind(taskContentTypeMiddleware));',
+  );
   const bodyParserIndex = source.indexOf(
     "app.useBodyParser('json', { limit: JSON_BODY_LIMIT_BYTES });",
+  );
+  const parserErrorIndex = source.indexOf(
+    'app.use(bodyParserErrorMiddleware.use.bind(bodyParserErrorMiddleware));',
   );
 
   assert.match(source, /import helmet from ['"]helmet['"];?/u);
@@ -171,7 +203,9 @@ test('HTTP application policy orders context, request logging, Helmet, drain gat
   assert.ok(requestLoggingIndex > requestContextIndex);
   assert.ok(helmetIndex > requestLoggingIndex);
   assert.ok(drainingGateIndex > helmetIndex);
-  assert.ok(bodyParserIndex > drainingGateIndex);
+  assert.ok(contentTypeIndex > drainingGateIndex);
+  assert.ok(bodyParserIndex > contentTypeIndex);
+  assert.ok(parserErrorIndex > bodyParserIndex);
 });
 
 test('configuration environment surface remains exactly frozen', async () => {
@@ -401,4 +435,174 @@ test('logging platform is singly registered and request middleware is DI-owned',
   assert.match(bootstrapSource, /app\.get\(RequestLoggingMiddleware\)/u);
   assert.doesNotMatch(bootstrapSource, /new\s+RequestLoggingMiddleware\s*\(/u);
   assert.match(bootstrapSource, /logger:\s*false/u);
+});
+
+test('validation dependencies are exact and alternate validators remain absent', async () => {
+  const packageJson = JSON.parse(
+    await readFile(path.join(REPOSITORY_ROOT, 'package.json'), 'utf8'),
+  );
+
+  assert.equal(packageJson.dependencies['class-validator'], '0.15.1');
+  assert.equal(packageJson.dependencies['class-transformer'], '0.5.1');
+  assert.equal(packageJson.dependencies.pino, '10.3.1');
+  for (const dependency of ['zod', 'joi', 'ajv', 'express-validator']) {
+    assert.equal(dependency in packageJson.dependencies, false);
+  }
+});
+
+test('strict global validation policy is frozen and uses a typed exception factory', async () => {
+  const source = await readFile(
+    path.join(SOURCE_ROOT, 'platform', 'errors', 'strict-validation.pipe.ts'),
+    'utf8',
+  );
+
+  assert.match(source, /whitelist:\s*true/u);
+  assert.match(source, /forbidNonWhitelisted:\s*true/u);
+  assert.match(source, /transform:\s*false/u);
+  assert.match(source, /enableImplicitConversion:\s*false/u);
+  assert.match(source, /target:\s*false/u);
+  assert.match(source, /value:\s*false/u);
+  assert.match(
+    source,
+    /exceptionFactory:\s*\(\)\s*=>\s*new RequestValidationError\(\)/u,
+  );
+  assert.doesNotMatch(source, /BadRequestException/u);
+});
+
+test('Problem Details adapters are DI-owned and registered once before Nest init', async () => {
+  const bootstrapSource = await readFile(
+    path.join(SOURCE_ROOT, 'bootstrap', 'bootstrap.ts'),
+    'utf8',
+  );
+  const appModuleSource = await readFile(
+    path.join(SOURCE_ROOT, 'app.module.ts'),
+    'utf8',
+  );
+  const errorsModuleSource = await readFile(
+    path.join(SOURCE_ROOT, 'platform', 'errors', 'errors.module.ts'),
+    'utf8',
+  );
+
+  assert.equal([...appModuleSource.matchAll(/\bErrorsModule\b/gu)].length, 2);
+  assert.match(errorsModuleSource, /@Global\(\)/u);
+  assert.match(errorsModuleSource, /HttpErrorBoundary/u);
+  assert.match(errorsModuleSource, /ProblemDetailsExceptionFilter/u);
+  assert.match(errorsModuleSource, /StrictValidationPipe/u);
+  assert.match(errorsModuleSource, /TaskContentTypeMiddleware/u);
+  assert.match(errorsModuleSource, /BodyParserErrorMiddleware/u);
+
+  assert.match(bootstrapSource, /app\.get\(TaskContentTypeMiddleware\)/u);
+  assert.match(bootstrapSource, /app\.get\(BodyParserErrorMiddleware\)/u);
+  assert.match(bootstrapSource, /app\.get\(StrictValidationPipe\)/u);
+  assert.match(
+    bootstrapSource,
+    /app\.get\(\s*ProblemDetailsExceptionFilter\s*,?\s*\)/u,
+  );
+  assert.equal(
+    [
+      ...bootstrapSource.matchAll(
+        /app\.useGlobalPipes\(strictValidationPipe\)/gu,
+      ),
+    ].length,
+    1,
+  );
+  assert.equal(
+    [
+      ...bootstrapSource.matchAll(
+        /app\.useGlobalFilters\(problemDetailsExceptionFilter\)/gu,
+      ),
+    ].length,
+    1,
+  );
+  assert.doesNotMatch(
+    bootstrapSource,
+    /new\s+(?:TaskContentTypeMiddleware|BodyParserErrorMiddleware|StrictValidationPipe|ProblemDetailsExceptionFilter)\s*\(/u,
+  );
+});
+
+test('public error boundary never logs raw request objects or passes an Error object to Pino', async () => {
+  const boundarySource = await readFile(
+    path.join(SOURCE_ROOT, 'platform', 'errors', 'http-error-boundary.ts'),
+    'utf8',
+  );
+  const loggerSource = await readFile(
+    path.join(SOURCE_ROOT, 'platform', 'logging', 'application-logger.ts'),
+    'utf8',
+  );
+
+  for (const pattern of [
+    /request\.url/u,
+    /request\.originalUrl/u,
+    /request\.query/u,
+    /request\.body/u,
+    /request\.headers/u,
+  ]) {
+    assert.doesNotMatch(boundarySource, pattern);
+  }
+  assert.match(boundarySource, /httpRequestFailed\(\{/u);
+  assert.doesNotMatch(boundarySource, /httpRequestFailed\(\s*error/u);
+  assert.match(loggerSource, /this\.logger\.error\(\{/u);
+  assert.doesNotMatch(
+    loggerSource,
+    /this\.logger\.error\(\s*(?:error|failure)\b/u,
+  );
+  assert.doesNotMatch(loggerSource, /error\.cause/u);
+  assert.doesNotMatch(loggerSource, /error\.stack/u);
+  assert.doesNotMatch(loggerSource, /error\.message/u);
+});
+
+test('Problem Details filter preserves known HttpException values outside unexpected-error logging', async () => {
+  const source = await readFile(
+    path.join(
+      SOURCE_ROOT,
+      'platform',
+      'errors',
+      'problem-details-exception.filter.ts',
+    ),
+    'utf8',
+  );
+
+  const validationIndex = source.indexOf(
+    'exception instanceof RequestValidationError',
+  );
+  const knownHttpIndex = source.lastIndexOf(
+    'if (exception instanceof HttpException)',
+  );
+  const unexpectedIndex = source.indexOf(
+    'this.boundary.unexpected(exception, request, response);',
+  );
+
+  assert.ok(validationIndex >= 0);
+  assert.ok(knownHttpIndex > validationIndex);
+  assert.ok(unexpectedIndex > knownHttpIndex);
+  assert.match(source, /preserveHttpException\(exception, response\);/u);
+});
+
+test('transport-specific HttpException ownership remains inside the HTTP boundary', async () => {
+  const owners = [];
+
+  for (const sourcePath of await productionSources()) {
+    const source = await readFile(sourcePath, 'utf8');
+    if (/\bHttpException\b/u.test(source)) {
+      owners.push(
+        path.relative(REPOSITORY_ROOT, sourcePath).split(path.sep).join('/'),
+      );
+    }
+  }
+
+  assert.deepEqual(owners, [
+    'src/platform/errors/problem-details-exception.filter.ts',
+  ]);
+});
+
+test('frozen specification file is byte-for-byte the approved Git blob', async () => {
+  const contract = await readFile(
+    path.join(REPOSITORY_ROOT, 'docs', 'spec', 'v1-contract.md'),
+  );
+  const hash = createHash('sha1')
+    .update(Buffer.from(`blob ${contract.byteLength}\0`))
+    .update(contract)
+    .digest('hex');
+
+  assert.equal(hash, 'c40f8382adc998365c52604102a7b595cd5b2cf0');
 });

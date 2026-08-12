@@ -7,6 +7,10 @@ import { AppModule } from '../app.module.js';
 import type { AppConfig } from '../config/config.types.js';
 import { DrainingGateMiddleware } from '../platform/context/draining-gate.middleware.js';
 import { RequestContextMiddleware } from '../platform/context/request-context.middleware.js';
+import { BodyParserErrorMiddleware } from '../platform/errors/body-parser-error.middleware.js';
+import { ProblemDetailsExceptionFilter } from '../platform/errors/problem-details-exception.filter.js';
+import { StrictValidationPipe } from '../platform/errors/strict-validation.pipe.js';
+import { TaskContentTypeMiddleware } from '../platform/errors/task-content-type.middleware.js';
 import type { ReadinessProbe } from '../platform/health/readiness-probe.js';
 import { RequestLoggingMiddleware } from '../platform/logging/request-logging.middleware.js';
 import { BootstrapLogger } from './bootstrap-logger.js';
@@ -92,6 +96,12 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
     const requestContextMiddleware = app.get(RequestContextMiddleware);
     const requestLoggingMiddleware = app.get(RequestLoggingMiddleware);
     const drainingGateMiddleware = app.get(DrainingGateMiddleware);
+    const taskContentTypeMiddleware = app.get(TaskContentTypeMiddleware);
+    const bodyParserErrorMiddleware = app.get(BodyParserErrorMiddleware);
+    const strictValidationPipe = app.get(StrictValidationPipe);
+    const problemDetailsExceptionFilter = app.get(
+      ProblemDetailsExceptionFilter,
+    );
     server = app.getHttpServer();
     configureHttpServer(server);
     configureHttpApplication(
@@ -99,7 +109,11 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
       requestContextMiddleware,
       requestLoggingMiddleware,
       drainingGateMiddleware,
+      taskContentTypeMiddleware,
+      bodyParserErrorMiddleware,
     );
+    app.useGlobalPipes(strictValidationPipe);
+    app.useGlobalFilters(problemDetailsExceptionFilter);
     await app.init();
 
     if (!isBooting(lifecycle)) {
