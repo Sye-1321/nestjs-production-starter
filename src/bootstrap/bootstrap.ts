@@ -5,6 +5,8 @@ import type { Server } from 'node:http';
 
 import { AppModule } from '../app.module.js';
 import type { AppConfig } from '../config/config.types.js';
+import { DrainingGateMiddleware } from '../platform/context/draining-gate.middleware.js';
+import { RequestContextMiddleware } from '../platform/context/request-context.middleware.js';
 import type { ReadinessProbe } from '../platform/health/readiness-probe.js';
 import { BootstrapLogger } from './bootstrap-logger.js';
 import {
@@ -86,9 +88,15 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
       return;
     }
 
+    const requestContextMiddleware = app.get(RequestContextMiddleware);
+    const drainingGateMiddleware = app.get(DrainingGateMiddleware);
     server = app.getHttpServer();
     configureHttpServer(server);
-    configureHttpApplication(app);
+    configureHttpApplication(
+      app,
+      requestContextMiddleware,
+      drainingGateMiddleware,
+    );
     await app.init();
 
     if (!isBooting(lifecycle)) {

@@ -27,26 +27,56 @@ test('raw Node HTTP server receives the exact fixed transport policy', () => {
   });
 });
 
-test('HTTP application installs Helmet and bounds JSON parsing to exactly 100 KiB', () => {
-  const middleware = [];
-  const bodyParsers = [];
+test('HTTP application installs context, Helmet, drain gate, then the exact JSON bound', () => {
+  const registrations = [];
+  let requestContextCalls = 0;
+  let drainingGateCalls = 0;
+  const requestContextMiddleware = {
+    use() {
+      requestContextCalls += 1;
+    },
+  };
+  const drainingGateMiddleware = {
+    use() {
+      drainingGateCalls += 1;
+    },
+  };
   const app = {
     use(value) {
-      middleware.push(value);
+      registrations.push({ kind: 'middleware', value });
       return this;
     },
     useBodyParser(parser, options) {
-      bodyParsers.push({ parser, options });
+      registrations.push({ kind: 'body-parser', parser, options });
       return this;
     },
   };
 
-  configureHttpApplication(app);
+  configureHttpApplication(
+    app,
+    requestContextMiddleware,
+    drainingGateMiddleware,
+  );
 
   assert.equal(JSON_BODY_LIMIT_BYTES, 102_400);
-  assert.equal(middleware.length, 1);
-  assert.equal(typeof middleware[0], 'function');
-  assert.deepEqual(bodyParsers, [
-    { parser: 'json', options: { limit: 102_400 } },
-  ]);
+  assert.equal(registrations.length, 4);
+  assert.equal(registrations[0].kind, 'middleware');
+  assert.equal(typeof registrations[0].value, 'function');
+  assert.equal(registrations[1].kind, 'middleware');
+  assert.equal(typeof registrations[1].value, 'function');
+  assert.equal(registrations[2].kind, 'middleware');
+  assert.equal(typeof registrations[2].value, 'function');
+  assert.deepEqual(registrations[3], {
+    kind: 'body-parser',
+    parser: 'json',
+    options: { limit: 102_400 },
+  });
+
+  registrations[0].value();
+  assert.equal(requestContextCalls, 1);
+  assert.equal(drainingGateCalls, 0);
+
+  registrations[2].value();
+  assert.equal(requestContextCalls, 1);
+  assert.equal(drainingGateCalls, 1);
 });

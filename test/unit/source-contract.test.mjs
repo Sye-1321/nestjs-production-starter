@@ -118,37 +118,52 @@ test('production bootstrap installs HTTP policy before application init and list
   const createIndex = source.indexOf(
     'NestFactory.create<NestExpressApplication>',
   );
-  const applicationPolicyIndex = source.indexOf(
-    'configureHttpApplication(app);',
+  const requestContextResolveIndex = source.indexOf(
+    'app.get(RequestContextMiddleware)',
   );
-  const initIndex = source.indexOf('await app.init();');
+  const drainingGateResolveIndex = source.indexOf(
+    'app.get(DrainingGateMiddleware)',
+  );
   const getServerIndex = source.indexOf('server = app.getHttpServer();');
   const serverPolicyIndex = source.indexOf('configureHttpServer(server);');
+  const applicationPolicyIndex = source.indexOf('configureHttpApplication(');
+  const initIndex = source.indexOf('await app.init();');
   const listenIndex = source.indexOf('await app.listen(options.config.port);');
 
   assert.ok(createIndex >= 0);
   assert.ok(source.indexOf('bodyParser: false', createIndex) > createIndex);
-  assert.ok(getServerIndex > createIndex);
+  assert.ok(requestContextResolveIndex > createIndex);
+  assert.ok(drainingGateResolveIndex > requestContextResolveIndex);
+  assert.ok(getServerIndex > drainingGateResolveIndex);
   assert.ok(serverPolicyIndex > getServerIndex);
-  assert.ok(initIndex > serverPolicyIndex);
-  assert.ok(applicationPolicyIndex > createIndex);
+  assert.ok(applicationPolicyIndex > serverPolicyIndex);
   assert.ok(initIndex > applicationPolicyIndex);
   assert.ok(listenIndex > initIndex);
 });
 
-test('HTTP application policy uses Helmet and the supported Nest body-parser API', async () => {
+test('HTTP application policy orders context, Helmet, drain gate, then JSON parsing', async () => {
   const source = await readFile(
     path.join(SOURCE_ROOT, 'bootstrap', 'http-server.ts'),
     'utf8',
   );
 
+  const requestContextIndex = source.indexOf(
+    'app.use(requestContextMiddleware.use.bind(requestContextMiddleware));',
+  );
+  const helmetIndex = source.indexOf('app.use(helmet());');
+  const drainingGateIndex = source.indexOf(
+    'app.use(drainingGateMiddleware.use.bind(drainingGateMiddleware));',
+  );
+  const bodyParserIndex = source.indexOf(
+    "app.useBodyParser('json', { limit: JSON_BODY_LIMIT_BYTES });",
+  );
+
   assert.match(source, /import helmet from ['"]helmet['"];?/u);
   assert.doesNotMatch(source, /from ['"]express['"]/u);
-  assert.match(source, /app\.use\(helmet\(\)\);/u);
-  assert.match(
-    source,
-    /app\.useBodyParser\(['"]json['"], \{ limit: JSON_BODY_LIMIT_BYTES \}\);/u,
-  );
+  assert.ok(requestContextIndex >= 0);
+  assert.ok(helmetIndex > requestContextIndex);
+  assert.ok(drainingGateIndex > helmetIndex);
+  assert.ok(bodyParserIndex > drainingGateIndex);
 });
 
 test('configuration environment surface remains exactly frozen', async () => {
@@ -217,4 +232,75 @@ test('production source does not enable forbidden HTTP transport mechanisms', as
       );
     }
   }
+});
+
+test('request context uses AsyncLocalStorage and the native request signal', async () => {
+  const contextSource = await readFile(
+    path.join(SOURCE_ROOT, 'platform', 'context', 'request-context.ts'),
+    'utf8',
+  );
+  const middlewareSource = await readFile(
+    path.join(
+      SOURCE_ROOT,
+      'platform',
+      'context',
+      'request-context.middleware.ts',
+    ),
+    'utf8',
+  );
+
+  assert.match(contextSource, /AsyncLocalStorage<RequestContext>/u);
+  assert.match(middlewareSource, /abortSignal:\s*request\.signal/u);
+  assert.doesNotMatch(contextSource, /\bAbortController\b/u);
+  assert.doesNotMatch(middlewareSource, /\bAbortController\b/u);
+});
+
+test('request ID selection uses duplicate-preserving headers only', async () => {
+  const source = await readFile(
+    path.join(SOURCE_ROOT, 'platform', 'context', 'request-id.ts'),
+    'utf8',
+  );
+
+  assert.match(source, /request\.headersDistinct\[REQUEST_ID_HEADER\]/u);
+  assert.doesNotMatch(source, /request\.headers(?:\[|\.)/u);
+  assert.match(source, /\brandomUUID\(\)/u);
+  assert.doesNotMatch(source, /Math\.random\(\)/u);
+});
+
+test('context platform is global, singly registered, and DI-owned', async () => {
+  const contextModuleSource = await readFile(
+    path.join(SOURCE_ROOT, 'platform', 'context', 'context.module.ts'),
+    'utf8',
+  );
+  const appModuleSource = await readFile(
+    path.join(SOURCE_ROOT, 'app.module.ts'),
+    'utf8',
+  );
+  const bootstrapSource = await readFile(
+    path.join(SOURCE_ROOT, 'bootstrap', 'bootstrap.ts'),
+    'utf8',
+  );
+
+  assert.match(contextModuleSource, /\bglobal:\s*true/u);
+  assert.match(
+    contextModuleSource,
+    /\{ provide: Lifecycle, useValue: lifecycle \}/u,
+  );
+  assert.doesNotMatch(contextModuleSource, /\bMiddlewareConsumer\b/u);
+  assert.doesNotMatch(contextModuleSource, /\bNestModule\b/u);
+  assert.doesNotMatch(contextModuleSource, /\bconfigure\s*\(/u);
+  assert.doesNotMatch(contextModuleSource, /new\s+Lifecycle\s*\(/u);
+
+  assert.equal(
+    [...appModuleSource.matchAll(/ContextModule\.forRoot\(lifecycle\)/gu)]
+      .length,
+    1,
+  );
+
+  assert.match(bootstrapSource, /app\.get\(RequestContextMiddleware\)/u);
+  assert.match(bootstrapSource, /app\.get\(DrainingGateMiddleware\)/u);
+  assert.doesNotMatch(
+    bootstrapSource,
+    /new\s+(?:RequestContextMiddleware|DrainingGateMiddleware)\s*\(/u,
+  );
 });
