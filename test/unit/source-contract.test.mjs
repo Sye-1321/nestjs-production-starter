@@ -121,6 +121,9 @@ test('production bootstrap installs HTTP policy before application init and list
   const requestContextResolveIndex = source.indexOf(
     'app.get(RequestContextMiddleware)',
   );
+  const requestLoggingResolveIndex = source.indexOf(
+    'app.get(RequestLoggingMiddleware)',
+  );
   const drainingGateResolveIndex = source.indexOf(
     'app.get(DrainingGateMiddleware)',
   );
@@ -133,7 +136,8 @@ test('production bootstrap installs HTTP policy before application init and list
   assert.ok(createIndex >= 0);
   assert.ok(source.indexOf('bodyParser: false', createIndex) > createIndex);
   assert.ok(requestContextResolveIndex > createIndex);
-  assert.ok(drainingGateResolveIndex > requestContextResolveIndex);
+  assert.ok(requestLoggingResolveIndex > requestContextResolveIndex);
+  assert.ok(drainingGateResolveIndex > requestLoggingResolveIndex);
   assert.ok(getServerIndex > drainingGateResolveIndex);
   assert.ok(serverPolicyIndex > getServerIndex);
   assert.ok(applicationPolicyIndex > serverPolicyIndex);
@@ -141,7 +145,7 @@ test('production bootstrap installs HTTP policy before application init and list
   assert.ok(listenIndex > initIndex);
 });
 
-test('HTTP application policy orders context, Helmet, drain gate, then JSON parsing', async () => {
+test('HTTP application policy orders context, request logging, Helmet, drain gate, then JSON parsing', async () => {
   const source = await readFile(
     path.join(SOURCE_ROOT, 'bootstrap', 'http-server.ts'),
     'utf8',
@@ -149,6 +153,9 @@ test('HTTP application policy orders context, Helmet, drain gate, then JSON pars
 
   const requestContextIndex = source.indexOf(
     'app.use(requestContextMiddleware.use.bind(requestContextMiddleware));',
+  );
+  const requestLoggingIndex = source.indexOf(
+    'app.use(requestLoggingMiddleware.use.bind(requestLoggingMiddleware));',
   );
   const helmetIndex = source.indexOf('app.use(helmet());');
   const drainingGateIndex = source.indexOf(
@@ -161,7 +168,8 @@ test('HTTP application policy orders context, Helmet, drain gate, then JSON pars
   assert.match(source, /import helmet from ['"]helmet['"];?/u);
   assert.doesNotMatch(source, /from ['"]express['"]/u);
   assert.ok(requestContextIndex >= 0);
-  assert.ok(helmetIndex > requestContextIndex);
+  assert.ok(requestLoggingIndex > requestContextIndex);
+  assert.ok(helmetIndex > requestLoggingIndex);
   assert.ok(drainingGateIndex > helmetIndex);
   assert.ok(bodyParserIndex > drainingGateIndex);
 });
@@ -303,4 +311,94 @@ test('context platform is global, singly registered, and DI-owned', async () => 
     bootstrapSource,
     /new\s+(?:RequestContextMiddleware|DrainingGateMiddleware)\s*\(/u,
   );
+});
+
+test('logging dependency policy pins direct Pino without wrapper packages', async () => {
+  const packageJson = JSON.parse(
+    await readFile(path.join(REPOSITORY_ROOT, 'package.json'), 'utf8'),
+  );
+
+  assert.equal(packageJson.dependencies.pino, '10.3.1');
+  assert.equal('nestjs-pino' in packageJson.dependencies, false);
+  assert.equal('pino-http' in packageJson.dependencies, false);
+  assert.equal('pino-pretty' in packageJson.dependencies, false);
+});
+
+test('application logger uses direct Pino with fixed service base and no transport', async () => {
+  const source = await readFile(
+    path.join(SOURCE_ROOT, 'platform', 'logging', 'application-logger.ts'),
+    'utf8',
+  );
+
+  assert.match(source, /import pino,/u);
+  assert.equal([...source.matchAll(/\bpino\(/gu)].length, 1);
+  assert.match(source, /service: SERVICE_NAME/u);
+  assert.match(source, /nestjs-production-starter/u);
+  assert.doesNotMatch(source, /\btransport\s*:/u);
+  assert.doesNotMatch(source, /\bpino\.transport\s*\(/u);
+  assert.doesNotMatch(source, /pino-pretty/u);
+  assert.doesNotMatch(source, /nestjs-pino/u);
+  assert.doesNotMatch(source, /pino-http/u);
+});
+
+test('request completion source does not collect raw request or response objects', async () => {
+  const source = await readFile(
+    path.join(
+      SOURCE_ROOT,
+      'platform',
+      'logging',
+      'request-logging.middleware.ts',
+    ),
+    'utf8',
+  );
+
+  const forbidden = [
+    /request\.url/u,
+    /request\.originalUrl/u,
+    /request\.query/u,
+    /request\.body/u,
+    /request\.headers/u,
+    /response\.body/u,
+    /response\.getHeaders\s*\(/u,
+    /response\.getHeader\s*\(/u,
+  ];
+
+  for (const pattern of forbidden) {
+    assert.doesNotMatch(source, pattern);
+  }
+  assert.match(source, /response\.once\(['"]finish['"]/u);
+  assert.doesNotMatch(source, /response\.(?:on|once)\(['"]close['"]/u);
+  assert.match(source, /performance\.now\(\)/u);
+  assert.doesNotMatch(source, /Date\.now\(\)/u);
+});
+
+test('logging platform is singly registered and request middleware is DI-owned', async () => {
+  const appModuleSource = await readFile(
+    path.join(SOURCE_ROOT, 'app.module.ts'),
+    'utf8',
+  );
+  const loggingModuleSource = await readFile(
+    path.join(SOURCE_ROOT, 'platform', 'logging', 'logging.module.ts'),
+    'utf8',
+  );
+  const bootstrapSource = await readFile(
+    path.join(SOURCE_ROOT, 'bootstrap', 'bootstrap.ts'),
+    'utf8',
+  );
+
+  assert.equal(
+    [
+      ...appModuleSource.matchAll(
+        /LoggingModule\.forRoot\(config\.logLevel\)/gu,
+      ),
+    ].length,
+    1,
+  );
+  assert.match(loggingModuleSource, /\bglobal:\s*true/u);
+  assert.match(loggingModuleSource, /RequestLoggingMiddleware/u);
+  assert.doesNotMatch(loggingModuleSource, /\bMiddlewareConsumer\b/u);
+  assert.doesNotMatch(loggingModuleSource, /\bNestModule\b/u);
+  assert.match(bootstrapSource, /app\.get\(RequestLoggingMiddleware\)/u);
+  assert.doesNotMatch(bootstrapSource, /new\s+RequestLoggingMiddleware\s*\(/u);
+  assert.match(bootstrapSource, /logger:\s*false/u);
 });

@@ -8,6 +8,7 @@ import type { AppConfig } from '../config/config.types.js';
 import { DrainingGateMiddleware } from '../platform/context/draining-gate.middleware.js';
 import { RequestContextMiddleware } from '../platform/context/request-context.middleware.js';
 import type { ReadinessProbe } from '../platform/health/readiness-probe.js';
+import { RequestLoggingMiddleware } from '../platform/logging/request-logging.middleware.js';
 import { BootstrapLogger } from './bootstrap-logger.js';
 import {
   configureHttpApplication,
@@ -89,12 +90,14 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
     }
 
     const requestContextMiddleware = app.get(RequestContextMiddleware);
+    const requestLoggingMiddleware = app.get(RequestLoggingMiddleware);
     const drainingGateMiddleware = app.get(DrainingGateMiddleware);
     server = app.getHttpServer();
     configureHttpServer(server);
     configureHttpApplication(
       app,
       requestContextMiddleware,
+      requestLoggingMiddleware,
       drainingGateMiddleware,
     );
     await app.init();

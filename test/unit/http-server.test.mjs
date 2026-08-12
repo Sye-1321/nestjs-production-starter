@@ -27,13 +27,19 @@ test('raw Node HTTP server receives the exact fixed transport policy', () => {
   });
 });
 
-test('HTTP application installs context, Helmet, drain gate, then the exact JSON bound', () => {
+test('HTTP application installs context, request logging, Helmet, drain gate, then the exact JSON bound', () => {
   const registrations = [];
   let requestContextCalls = 0;
+  let requestLoggingCalls = 0;
   let drainingGateCalls = 0;
   const requestContextMiddleware = {
     use() {
       requestContextCalls += 1;
+    },
+  };
+  const requestLoggingMiddleware = {
+    use() {
+      requestLoggingCalls += 1;
     },
   };
   const drainingGateMiddleware = {
@@ -55,18 +61,17 @@ test('HTTP application installs context, Helmet, drain gate, then the exact JSON
   configureHttpApplication(
     app,
     requestContextMiddleware,
+    requestLoggingMiddleware,
     drainingGateMiddleware,
   );
 
   assert.equal(JSON_BODY_LIMIT_BYTES, 102_400);
-  assert.equal(registrations.length, 4);
-  assert.equal(registrations[0].kind, 'middleware');
-  assert.equal(typeof registrations[0].value, 'function');
-  assert.equal(registrations[1].kind, 'middleware');
-  assert.equal(typeof registrations[1].value, 'function');
-  assert.equal(registrations[2].kind, 'middleware');
-  assert.equal(typeof registrations[2].value, 'function');
-  assert.deepEqual(registrations[3], {
+  assert.equal(registrations.length, 5);
+  for (const registration of registrations.slice(0, 4)) {
+    assert.equal(registration.kind, 'middleware');
+    assert.equal(typeof registration.value, 'function');
+  }
+  assert.deepEqual(registrations[4], {
     kind: 'body-parser',
     parser: 'json',
     options: { limit: 102_400 },
@@ -74,9 +79,16 @@ test('HTTP application installs context, Helmet, drain gate, then the exact JSON
 
   registrations[0].value();
   assert.equal(requestContextCalls, 1);
+  assert.equal(requestLoggingCalls, 0);
   assert.equal(drainingGateCalls, 0);
 
-  registrations[2].value();
+  registrations[1].value();
   assert.equal(requestContextCalls, 1);
+  assert.equal(requestLoggingCalls, 1);
+  assert.equal(drainingGateCalls, 0);
+
+  registrations[3].value();
+  assert.equal(requestContextCalls, 1);
+  assert.equal(requestLoggingCalls, 1);
   assert.equal(drainingGateCalls, 1);
 });

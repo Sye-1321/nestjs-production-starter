@@ -6,6 +6,7 @@ import type { AppConfig } from './config/config.types.js';
 import { ContextModule } from './platform/context/context.module.js';
 import { HealthModule } from './platform/health/health.module.js';
 import type { ReadinessProbe } from './platform/health/readiness-probe.js';
+import { LoggingModule } from './platform/logging/logging.module.js';
 
 @Module({})
 export class AppModule {
@@ -19,6 +20,7 @@ export class AppModule {
       imports: [
         ConfigModule.forRoot(config),
         ContextModule.forRoot(lifecycle),
+        LoggingModule.forRoot(config.logLevel),
         HealthModule.forRoot(lifecycle, readinessProbe),
       ],
     };
