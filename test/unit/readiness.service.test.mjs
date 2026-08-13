@@ -4,14 +4,15 @@ import test from 'node:test';
 import { Lifecycle } from '../../dist/bootstrap/lifecycle.js';
 import { ReadinessService } from '../../dist/platform/health/readiness.service.js';
 
-function createProbe(result) {
+function createDatabaseProbe({ reject = false, onProbe } = {}) {
   let calls = 0;
 
   return {
-    probe: {
-      async isReady() {
+    database: {
+      async probe() {
         calls += 1;
-        return result;
+        onProbe?.();
+        if (reject) throw new Error('probe failure');
       },
     },
     calls: () => calls,
@@ -20,8 +21,8 @@ function createProbe(result) {
 
 test('BOOTING is not ready and does not invoke the dependency probe', async () => {
   const lifecycle = new Lifecycle();
-  const controlled = createProbe(true);
-  const readiness = new ReadinessService(lifecycle, controlled.probe);
+  const controlled = createDatabaseProbe();
+  const readiness = new ReadinessService(lifecycle, controlled.database);
 
   assert.equal(await readiness.isReady(), false);
   assert.equal(controlled.calls(), 0);
@@ -30,66 +31,42 @@ test('BOOTING is not ready and does not invoke the dependency probe', async () =
 test('DRAINING is not ready and does not invoke the dependency probe', async () => {
   const lifecycle = new Lifecycle();
   lifecycle.beginDraining();
-  const controlled = createProbe(true);
-  const readiness = new ReadinessService(lifecycle, controlled.probe);
+  const controlled = createDatabaseProbe();
+  const readiness = new ReadinessService(lifecycle, controlled.database);
 
   assert.equal(await readiness.isReady(), false);
   assert.equal(controlled.calls(), 0);
 });
 
-test('READY without a real dependency probe fails closed', async () => {
+test('READY runs the shared database probe and evaluates true on success', async () => {
   const lifecycle = new Lifecycle();
   lifecycle.markReady();
-  const readiness = new ReadinessService(lifecycle, null);
-
-  assert.equal(await readiness.isReady(), false);
-});
-
-test('READY with a successful injected probe evaluates true in policy evidence', async () => {
-  const lifecycle = new Lifecycle();
-  lifecycle.markReady();
-  const controlled = createProbe(true);
-  const readiness = new ReadinessService(lifecycle, controlled.probe);
+  const controlled = createDatabaseProbe();
+  const readiness = new ReadinessService(lifecycle, controlled.database);
 
   assert.equal(await readiness.isReady(), true);
   assert.equal(controlled.calls(), 1);
 });
 
-test('READY with an unsuccessful injected probe evaluates false', async () => {
+test('READY with a rejected database probe evaluates false safely', async () => {
   const lifecycle = new Lifecycle();
   lifecycle.markReady();
-  const controlled = createProbe(false);
-  const readiness = new ReadinessService(lifecycle, controlled.probe);
+  const controlled = createDatabaseProbe({ reject: true });
+  const readiness = new ReadinessService(lifecycle, controlled.database);
 
   assert.equal(await readiness.isReady(), false);
   assert.equal(controlled.calls(), 1);
 });
 
-test('READY with a rejected injected probe evaluates false safely', async () => {
-  const lifecycle = new Lifecycle();
-  lifecycle.markReady();
-  let calls = 0;
-  const readiness = new ReadinessService(lifecycle, {
-    async isReady() {
-      calls += 1;
-      throw new Error('probe failure');
-    },
-  });
-
-  assert.equal(await readiness.isReady(), false);
-  assert.equal(calls, 1);
-});
-
 test('readiness rechecks lifecycle after the asynchronous probe', async () => {
   const lifecycle = new Lifecycle();
   lifecycle.markReady();
-  const readiness = new ReadinessService(lifecycle, {
-    async isReady() {
-      lifecycle.beginDraining();
-      return true;
-    },
+  const controlled = createDatabaseProbe({
+    onProbe: () => lifecycle.beginDraining(),
   });
+  const readiness = new ReadinessService(lifecycle, controlled.database);
 
   assert.equal(await readiness.isReady(), false);
   assert.equal(lifecycle.state, 'DRAINING');
+  assert.equal(controlled.calls(), 1);
 });

@@ -12,7 +12,6 @@ import { BodyParserErrorMiddleware } from '../platform/errors/body-parser-error.
 import { ProblemDetailsExceptionFilter } from '../platform/errors/problem-details-exception.filter.js';
 import { StrictValidationPipe } from '../platform/errors/strict-validation.pipe.js';
 import { TaskContentTypeMiddleware } from '../platform/errors/task-content-type.middleware.js';
-import type { ReadinessProbe } from '../platform/health/readiness-probe.js';
 import { RequestLoggingMiddleware } from '../platform/logging/request-logging.middleware.js';
 import { BootstrapLogger } from './bootstrap-logger.js';
 import {
@@ -29,7 +28,6 @@ export interface BootstrapProcessTestSeam {
 export interface BootstrapOptions {
   readonly config: AppConfig;
   readonly logger: BootstrapLogger;
-  readonly readinessProbe?: ReadinessProbe;
   readonly processTestSeam?: BootstrapProcessTestSeam;
 }
 
@@ -82,7 +80,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
     }
 
     app = await NestFactory.create<NestExpressApplication>(
-      AppModule.forRoot(options.config, lifecycle, options.readinessProbe),
+      AppModule.forRoot(options.config, lifecycle),
       {
         abortOnError: false,
         bodyParser: false,

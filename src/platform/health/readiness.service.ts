@@ -1,14 +1,17 @@
+import { Injectable } from '@nestjs/common';
+
 import { Lifecycle } from '../../bootstrap/lifecycle.js';
-import type { ReadinessProbe } from './readiness-probe.js';
+import { DatabaseService } from '../database/database.service.js';
 
 function isLifecycleReady(lifecycle: Lifecycle): boolean {
   return lifecycle.state === 'READY';
 }
 
+@Injectable()
 export class ReadinessService {
   public constructor(
     private readonly lifecycle: Lifecycle,
-    private readonly probe: ReadinessProbe | null,
+    private readonly database: DatabaseService,
   ) {}
 
   public async isReady(): Promise<boolean> {
@@ -16,18 +19,12 @@ export class ReadinessService {
       return false;
     }
 
-    if (this.probe === null) {
-      return false;
-    }
-
-    let dependencyReady: boolean;
-
     try {
-      dependencyReady = await this.probe.isReady();
+      await this.database.probe();
     } catch {
       return false;
     }
 
-    return dependencyReady && isLifecycleReady(this.lifecycle);
+    return isLifecycleReady(this.lifecycle);
   }
 }

@@ -96,20 +96,35 @@ test('runtime source has no Prisma migration execution and no Testcontainers dep
   }
 });
 
-test('health/readiness remains independent of DatabaseService in C2', async () => {
-  const healthSources = [
-    'src/platform/health/health.module.ts',
-    'src/platform/health/health.controller.ts',
-    'src/platform/health/readiness-probe.ts',
-    'src/platform/health/readiness.service.ts',
-  ];
+test('readiness uses the DI-owned DatabaseService probe and no alternate timeout or pool', async () => {
+  const service = await read('src/platform/health/readiness.service.ts');
+  const module = await read('src/platform/health/health.module.ts');
+  const appModule = await read('src/app.module.ts');
+  const bootstrap = await read('src/bootstrap/bootstrap.ts');
 
-  for (const relative of healthSources) {
-    const source = await read(relative);
-    assert.doesNotMatch(source, /DatabaseService/u, relative);
-    assert.doesNotMatch(source, /databaseService/u, relative);
-    assert.doesNotMatch(source, /\.probe\(\)/u, relative);
+  assert.match(service, /DatabaseService/u);
+  assert.equal([...service.matchAll(/this\.database\.probe\(\)/gu)].length, 1);
+  assert.match(module, /ReadinessService/u);
+  assert.equal(
+    [...appModule.matchAll(/HealthModule\.forRoot\(lifecycle\)/gu)].length,
+    1,
+  );
+
+  for (const [relative, source] of [
+    ['src/platform/health/readiness.service.ts', service],
+    ['src/platform/health/health.module.ts', module],
+    ['src/app.module.ts', appModule],
+    ['src/bootstrap/bootstrap.ts', bootstrap],
+  ]) {
+    assert.doesNotMatch(
+      source,
+      /new\s+(?:Pool|PrismaPg|PrismaClient)\s*\(/u,
+      relative,
+    );
     assert.doesNotMatch(source, /PG_POOL/u, relative);
+    assert.doesNotMatch(source, /Promise\.race\s*\(/u, relative);
+    assert.doesNotMatch(source, /\bquery_timeout\b/u, relative);
+    assert.doesNotMatch(source, /READINESS_PROBE|ReadinessProbe/u, relative);
   }
 });
 

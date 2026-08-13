@@ -121,7 +121,7 @@ test('PostgreSQL unavailable at startup prevents listen and leaks no database de
   }
 });
 
-test('startup PostgreSQL probe succeeds before listen; live is 200 and readiness remains 503 in C2', async (t) => {
+test('startup PostgreSQL probe succeeds before listen and health endpoints are ready', async (t) => {
   const port = await getAvailablePort();
   const environment = validEnvironment(port);
   const { child, output: getOutput } = spawnEntry(MAIN_ENTRY, environment);
@@ -131,7 +131,8 @@ test('startup PostgreSQL probe succeeds before listen; live is 200 and readiness
   assert.deepEqual(JSON.parse(live.body), { status: 'live' });
 
   const ready = await requestPath(port, '/health/ready');
-  assert.equal(ready.statusCode, 503);
+  assert.equal(ready.statusCode, 200);
+  assert.deepEqual(JSON.parse(ready.body), { status: 'ready' });
 
   assert.equal(structuredEvents(getOutput(), 'startup_failed').length, 0);
 });
