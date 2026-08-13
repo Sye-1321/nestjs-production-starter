@@ -3,8 +3,10 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
+import { RandomPortGenerator } from 'testcontainers';
 
 const POSTGRES_IMAGE = 'postgres:18.4-bookworm';
+const POSTGRES_PORT = 5432;
 const SUPPORTED_SUITES = new Set([
   'test/integration/*.test.mjs',
   'test/e2e/*.test.mjs',
@@ -26,7 +28,10 @@ let container;
 let exitCode = 1;
 
 try {
-  container = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
+  const hostPort = await new RandomPortGenerator().generatePort();
+  container = await new PostgreSqlContainer(POSTGRES_IMAGE)
+    .withExposedPorts({ container: POSTGRES_PORT, host: hostPort })
+    .start();
   const databaseUrl = container.getConnectionUri();
 
   const migrationExitCode = await runNode(
@@ -45,6 +50,7 @@ try {
     {
       ...process.env,
       POSTGRES_TEST_DATABASE_URL: databaseUrl,
+      POSTGRES_TEST_CONTAINER_ID: container.getId(),
       PROCESS_TEST_DATABASE_URL: databaseUrl,
     },
     'PostgreSQL test suite',

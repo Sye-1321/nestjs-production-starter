@@ -4,6 +4,8 @@ import type { Task } from '../generated/prisma/client.js';
 import {
   DatabaseUnavailableError,
   isObservedPrismaPgPoolAcquisitionTimeout,
+  isObservedPrismaPgTaskConnectionRefused,
+  isObservedPrismaPgUnexpectedConnectionTermination,
 } from '../platform/database/database.errors.js';
 import { DatabaseService } from '../platform/database/database.service.js';
 
@@ -41,7 +43,11 @@ export class TaskRepository {
 }
 
 function rethrowDatabaseFailure(error: unknown): never {
-  if (isObservedPrismaPgPoolAcquisitionTimeout(error)) {
+  if (
+    isObservedPrismaPgPoolAcquisitionTimeout(error) ||
+    isObservedPrismaPgUnexpectedConnectionTermination(error) ||
+    isObservedPrismaPgTaskConnectionRefused(error)
+  ) {
     throw new DatabaseUnavailableError();
   }
 

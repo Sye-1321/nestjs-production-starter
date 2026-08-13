@@ -43,10 +43,15 @@ test('integration and e2e suites use one external migration harness with real Po
     packageJson.scripts['test:e2e'],
     'node test/support/run-postgresql-suite.mjs "test/e2e/*.test.mjs"',
   );
-  assert.match(runner, /new PostgreSqlContainer\(POSTGRES_IMAGE\)\.start\(\)/u);
+  assert.match(runner, /new PostgreSqlContainer\(POSTGRES_IMAGE\)/u);
+  assert.match(
+    runner,
+    /\.withExposedPorts\(\{ container: POSTGRES_PORT, host: hostPort \}\)/u,
+  );
   assert.match(runner, /postgres:18\.4-bookworm/u);
   assert.match(runner, /'migrate', 'deploy'/u);
   assert.match(runner, /POSTGRES_TEST_DATABASE_URL: databaseUrl/u);
+  assert.match(runner, /POSTGRES_TEST_CONTAINER_ID: container\.getId\(\)/u);
   assert.match(runner, /PROCESS_TEST_DATABASE_URL: databaseUrl/u);
   assert.match(runner, /await container\.stop\(\)/u);
   assert.doesNotMatch(runner, /localhost:5432/u);
@@ -97,7 +102,7 @@ test('database waits and Task creation contain no fake timeout or transaction me
   }
 });
 
-test('DB classifier has one exact pinned pg-pool acquisition-timeout branch', async () => {
+test('DB classifier has exact pinned pg-pool outage branches', async () => {
   const classifier = await read('src/platform/database/database.errors.ts');
   const repository = await read('src/task/task.repository.ts');
   const filter = await read(
@@ -109,9 +114,13 @@ test('DB classifier has one exact pinned pg-pool acquisition-timeout branch', as
     classifier,
     /PG_POOL_ACQUISITION_TIMEOUT_MESSAGE\s*=\s*\n?\s*'timeout exceeded when trying to connect'/u,
   );
+  assert.match(
+    classifier,
+    /PG_UNEXPECTED_CONNECTION_TERMINATION_MESSAGE\s*=\s*\n?\s*'Connection terminated unexpectedly'/u,
+  );
   assert.equal(
     [...classifier.matchAll(/export function isObserved/gu)].length,
-    1,
+    3,
   );
   assert.match(
     classifier,
@@ -120,21 +129,41 @@ test('DB classifier has one exact pinned pg-pool acquisition-timeout branch', as
   assert.match(classifier, /Object\.getOwnPropertyNames\(error\)\.sort\(\)/u);
   assert.match(
     classifier,
-    /candidate\.message === PG_POOL_ACQUISITION_TIMEOUT_MESSAGE/u,
+    /error\.message === PG_POOL_ACQUISITION_TIMEOUT_MESSAGE/u,
+  );
+  assert.match(
+    classifier,
+    /error\.message === PG_UNEXPECTED_CONNECTION_TERMINATION_MESSAGE/u,
   );
   assert.doesNotMatch(classifier, /\.includes\(/u);
   assert.doesNotMatch(
     classifier,
     /(?:new\s+RegExp|RegExp\s*\(|\.match\s*\(|\.test\s*\()/u,
   );
-  assert.doesNotMatch(classifier, /ECONN/u);
-  assert.doesNotMatch(classifier, /PrismaClientKnownRequestError/u);
+  assert.match(classifier, /PG_CONNECTION_REFUSED_CODE = 'ECONNREFUSED'/u);
+  assert.match(classifier, /PrismaClientKnownRequestError/u);
   assert.doesNotMatch(classifier, /P20\d\d/u);
 
   assert.equal(
     [
       ...repository.matchAll(
         /isObservedPrismaPgPoolAcquisitionTimeout\(error\)/gu,
+      ),
+    ].length,
+    1,
+  );
+  assert.equal(
+    [
+      ...repository.matchAll(
+        /isObservedPrismaPgTaskConnectionRefused\(error\)/gu,
+      ),
+    ].length,
+    1,
+  );
+  assert.equal(
+    [
+      ...repository.matchAll(
+        /isObservedPrismaPgUnexpectedConnectionTermination\(error\)/gu,
       ),
     ].length,
     1,

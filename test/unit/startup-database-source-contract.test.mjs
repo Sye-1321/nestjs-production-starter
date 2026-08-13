@@ -136,7 +136,7 @@ test('process suite uses one PostgreSQL Testcontainer and remains serialized', a
     packageJson.devDependencies['@testcontainers/postgresql'],
     '12.0.4',
   );
-  assert.equal(packageJson.devDependencies.testcontainers, undefined);
+  assert.equal(packageJson.devDependencies.testcontainers, '12.0.4');
   assert.equal(
     packageJson.scripts['test:process'],
     'node test/process/run-process-tests.mjs',
