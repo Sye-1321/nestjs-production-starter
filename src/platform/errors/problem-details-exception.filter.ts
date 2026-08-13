@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import { TaskNotFoundError } from '../../task/task.errors.js';
 import { HttpErrorBoundary } from './http-error-boundary.js';
 import { RequestValidationError } from './strict-validation.pipe.js';
 
@@ -62,6 +63,11 @@ export class ProblemDetailsExceptionFilter implements ExceptionFilter {
 
     if (exception instanceof RequestValidationError) {
       this.boundary.respond(response, 'VALIDATION_ERROR');
+      return;
+    }
+
+    if (exception instanceof TaskNotFoundError) {
+      this.boundary.respond(response, 'TASK_NOT_FOUND');
       return;
     }
 

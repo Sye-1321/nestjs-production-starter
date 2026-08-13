@@ -72,7 +72,7 @@ test('full application process output excludes request header, body, and query c
 
   const body = JSON.stringify({ title: BODY_CANARY });
   const response = await requestHttp(port, {
-    pathname: `/v1/tasks?probe=${QUERY_CANARY}`,
+    pathname: `/v1/unmatched?probe=${QUERY_CANARY}`,
     method: 'POST',
     headers: {
       'content-type': 'application/json',

@@ -9,6 +9,7 @@ import { ErrorsModule } from './platform/errors/errors.module.js';
 import { HealthModule } from './platform/health/health.module.js';
 import type { ReadinessProbe } from './platform/health/readiness-probe.js';
 import { LoggingModule } from './platform/logging/logging.module.js';
+import { TaskModule } from './task/task.module.js';
 
 @Module({})
 export class AppModule {
@@ -26,6 +27,7 @@ export class AppModule {
         DatabaseModule.forRoot(config),
         ErrorsModule,
         HealthModule.forRoot(lifecycle, readinessProbe),
+        TaskModule,
       ],
     };
   }
