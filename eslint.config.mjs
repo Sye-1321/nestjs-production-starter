@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: ['dist/**', 'node_modules/**', 'src/generated/prisma/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
@@ -19,6 +19,10 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-extraneous-class': 'off',
     },
+  },
+  {
+    files: ['prisma.config.ts'],
+    ...tseslint.configs.disableTypeChecked,
   },
   {
     files: ['**/*.mjs'],

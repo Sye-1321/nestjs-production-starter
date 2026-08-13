@@ -2,3 +2,5 @@ dist
 node_modules
 
 docs/spec/v1-contract.md
+
+src/generated/prisma/

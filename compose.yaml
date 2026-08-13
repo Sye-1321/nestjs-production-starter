@@ -1,0 +1,9 @@
+services:
+  postgres:
+    image: postgres:18.4-bookworm
+    environment:
+      POSTGRES_DB: nestjs_production_starter
+      POSTGRES_USER: nestjs_production_starter
+      POSTGRES_PASSWORD: nestjs_production_starter
+    ports:
+      - '127.0.0.1:5432:5432'
