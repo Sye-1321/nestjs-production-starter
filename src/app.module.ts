@@ -8,6 +8,7 @@ import { DatabaseModule } from './platform/database/database.module.js';
 import { ErrorsModule } from './platform/errors/errors.module.js';
 import { HealthModule } from './platform/health/health.module.js';
 import { LoggingModule } from './platform/logging/logging.module.js';
+import { MetricsModule } from './platform/metrics/metrics.module.js';
 import { TaskModule } from './task/task.module.js';
 
 @Module({})
@@ -24,6 +25,7 @@ export class AppModule {
         LoggingModule.forRoot(config.logLevel),
         DatabaseModule.forRoot(config),
         ErrorsModule,
+        MetricsModule,
         HealthModule.forRoot(lifecycle),
         TaskModule,
       ],

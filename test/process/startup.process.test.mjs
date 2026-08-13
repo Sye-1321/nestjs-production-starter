@@ -6,6 +6,7 @@ import {
   EXIT_WAIT_MS,
   getAvailablePort,
   registerChildCleanup,
+  requestHttp,
   requestPath,
   spawnEntry,
   startPortMonitor,
@@ -133,6 +134,21 @@ test('startup PostgreSQL probe succeeds before listen and health endpoints are r
   const ready = await requestPath(port, '/health/ready');
   assert.equal(ready.statusCode, 200);
   assert.deepEqual(JSON.parse(ready.body), { status: 'ready' });
+
+  const metrics = await requestHttp(port, { pathname: '/metrics' });
+  assert.equal(metrics.statusCode, 200);
+  assert.match(
+    metrics.headers['content-type'] ?? '',
+    /^text\/plain; charset=utf-8; version=0\.0\.4$/u,
+  );
+  for (const metricName of [
+    'http_server_requests_total',
+    'http_server_request_duration_seconds',
+    'tasks_created_total',
+    'service_dependency_ready',
+  ]) {
+    assert.match(metrics.body, new RegExp(`# HELP ${metricName} `, 'u'));
+  }
 
   assert.equal(structuredEvents(getOutput(), 'startup_failed').length, 0);
 });
