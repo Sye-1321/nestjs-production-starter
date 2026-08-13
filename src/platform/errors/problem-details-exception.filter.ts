@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import { DatabaseUnavailableError } from '../database/database.errors.js';
 import { TaskNotFoundError } from '../../task/task.errors.js';
 import { HttpErrorBoundary } from './http-error-boundary.js';
 import { RequestValidationError } from './strict-validation.pipe.js';
@@ -68,6 +69,11 @@ export class ProblemDetailsExceptionFilter implements ExceptionFilter {
 
     if (exception instanceof TaskNotFoundError) {
       this.boundary.respond(response, 'TASK_NOT_FOUND');
+      return;
+    }
+
+    if (exception instanceof DatabaseUnavailableError) {
+      this.boundary.respond(response, 'DEPENDENCY_UNAVAILABLE');
       return;
     }
 

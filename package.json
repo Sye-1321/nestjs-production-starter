@@ -18,6 +18,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest:unit": "npm run build",
     "test:unit": "node --test \"test/unit/*.test.mjs\"",
+    "pretest:integration": "npm run build",
+    "test:integration": "node test/support/run-postgresql-suite.mjs \"test/integration/*.test.mjs\"",
+    "pretest:e2e": "npm run build",
+    "test:e2e": "node test/support/run-postgresql-suite.mjs \"test/e2e/*.test.mjs\"",
     "pretest:process": "npm run build",
     "test:process": "node test/process/run-process-tests.mjs"
   },

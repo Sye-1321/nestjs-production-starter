@@ -11,6 +11,7 @@ import { TaskNotFoundError } from '../../dist/task/task.errors.js';
 import { TaskRepository } from '../../dist/task/task.repository.js';
 import { TaskService } from '../../dist/task/task.service.js';
 import { RequestContextStorage } from '../../dist/platform/context/request-context.js';
+import { DatabaseUnavailableError } from '../../dist/platform/database/database.errors.js';
 import {
   HttpErrorBoundary,
   PROBLEM_DETAILS_CONTENT_TYPE,
@@ -264,6 +265,37 @@ test('TaskNotFoundError maps through the existing Problem Details boundary', () 
     detail: 'The requested resource was not found.',
     code: 'TASK_NOT_FOUND',
     requestId: 'missing-task-request',
+  });
+  assert.equal(unexpectedLogs, 0);
+});
+
+test('DatabaseUnavailableError maps through the existing sanitized Problem Details boundary', () => {
+  const storage = new RequestContextStorage();
+  let unexpectedLogs = 0;
+  const boundary = new HttpErrorBoundary(storage, {
+    httpRequestFailed() {
+      unexpectedLogs += 1;
+    },
+  });
+  const filter = new ProblemDetailsExceptionFilter(boundary);
+  const response = responseDouble();
+
+  storage.run({ requestId: 'database-unavailable', abortSignal: {} }, () => {
+    filter.catch(new DatabaseUnavailableError(), hostDouble(response));
+  });
+
+  assert.equal(response.statusCode, 503);
+  assert.equal(
+    response.getHeader('content-type'),
+    PROBLEM_DETAILS_CONTENT_TYPE,
+  );
+  assert.deepEqual(response.body, {
+    type: 'urn:nestjs-production-starter:problem:dependency-unavailable',
+    title: 'Service temporarily unavailable',
+    status: 503,
+    detail: 'The service is temporarily unavailable.',
+    code: 'DEPENDENCY_UNAVAILABLE',
+    requestId: 'database-unavailable',
   });
   assert.equal(unexpectedLogs, 0);
 });
