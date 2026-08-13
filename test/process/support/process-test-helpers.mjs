@@ -63,11 +63,22 @@ export async function getAvailablePort() {
 }
 
 export function validEnvironment(port, overrides = {}) {
+  const hasDatabaseUrlOverride = Object.hasOwn(overrides, 'DATABASE_URL');
+  const databaseUrl = hasDatabaseUrlOverride
+    ? overrides.DATABASE_URL
+    : process.env.PROCESS_TEST_DATABASE_URL;
+
+  if (!hasDatabaseUrlOverride && databaseUrl === undefined) {
+    throw new Error(
+      'PROCESS_TEST_DATABASE_URL is required; run process tests through npm run test:process',
+    );
+  }
+
   const applicationEnvironment = {
     NODE_ENV: 'test',
     PORT: String(port),
     LOG_LEVEL: 'silent',
-    DATABASE_URL: 'postgresql://127.0.0.1:1/m1_process_test',
+    DATABASE_URL: databaseUrl,
     DB_POOL_MAX: '10',
     DB_ACQUIRE_TIMEOUT_MS: '1000',
     DB_STATEMENT_TIMEOUT_MS: '3000',

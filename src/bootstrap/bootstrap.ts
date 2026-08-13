@@ -7,6 +7,7 @@ import { AppModule } from '../app.module.js';
 import type { AppConfig } from '../config/config.types.js';
 import { DrainingGateMiddleware } from '../platform/context/draining-gate.middleware.js';
 import { RequestContextMiddleware } from '../platform/context/request-context.middleware.js';
+import { DatabaseService } from '../platform/database/database.service.js';
 import { BodyParserErrorMiddleware } from '../platform/errors/body-parser-error.middleware.js';
 import { ProblemDetailsExceptionFilter } from '../platform/errors/problem-details-exception.filter.js';
 import { StrictValidationPipe } from '../platform/errors/strict-validation.pipe.js';
@@ -93,6 +94,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
       return;
     }
 
+    const databaseService = app.get(DatabaseService);
     const requestContextMiddleware = app.get(RequestContextMiddleware);
     const requestLoggingMiddleware = app.get(RequestLoggingMiddleware);
     const drainingGateMiddleware = app.get(DrainingGateMiddleware);
@@ -115,6 +117,12 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
     app.useGlobalPipes(strictValidationPipe);
     app.useGlobalFilters(problemDetailsExceptionFilter);
     await app.init();
+
+    if (!isBooting(lifecycle)) {
+      return;
+    }
+
+    await databaseService.probe();
 
     if (!isBooting(lifecycle)) {
       return;

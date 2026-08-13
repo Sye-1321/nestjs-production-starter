@@ -43,7 +43,7 @@ test('database dependency pins are exact and match the approved M3 baseline', as
   assert.equal(packageJson.devDependencies['@types/pg'], '8.21.0');
 });
 
-test('generated client scripts are exact and preserve serialized process tests', async () => {
+test('generated client scripts remain exact and process tests route through the C2 harness', async () => {
   const packageJson = JSON.parse(await read('package.json'));
 
   assert.equal(packageJson.scripts['prisma:generate'], 'prisma generate');
@@ -51,7 +51,7 @@ test('generated client scripts are exact and preserve serialized process tests',
   assert.equal(packageJson.scripts.prebuild, 'npm run prisma:generate');
   assert.equal(
     packageJson.scripts['test:process'],
-    'node --test --test-concurrency=1 "test/process/*.test.mjs"',
+    'node test/process/run-process-tests.mjs',
   );
 });
 
@@ -145,15 +145,16 @@ test('PrismaClient construction is application-scoped and not per request', asyn
   ]);
 });
 
-test('C1 defines a real shared-pool probe but does not wire it into bootstrap yet', async () => {
+test('C2 wires the existing shared-pool probe into bootstrap without moving SQL ownership', async () => {
   const databaseService = await read(
     'src/platform/database/database.service.ts',
   );
   const bootstrap = await read('src/bootstrap/bootstrap.ts');
 
   assert.match(databaseService, /this\.pool\.query\('SELECT 1'\)/u);
-  assert.doesNotMatch(bootstrap, /DatabaseService/u);
-  assert.doesNotMatch(bootstrap, /\.probe\(\)/u);
+  assert.match(bootstrap, /app\.get\(\s*DatabaseService\s*\)/u);
+  assert.match(bootstrap, /await\s+databaseService\.probe\(\)/u);
+  assert.doesNotMatch(bootstrap, /SELECT\s+1/iu);
 });
 
 test('Prisma schema is PostgreSQL-only with exactly the frozen Task shape', async () => {

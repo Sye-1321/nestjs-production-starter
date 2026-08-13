@@ -12,6 +12,7 @@ import {
   structuredEvents,
   validEnvironment,
   waitForExit,
+  waitForPortClosed,
   waitForStatus,
 } from './support/process-test-helpers.mjs';
 
@@ -72,7 +73,55 @@ test('invalid DATABASE_URL never leaks its credential canary', async (t) => {
   });
 });
 
-test('live is 200 and M1 readiness fails closed with no database probe', async (t) => {
+test('PostgreSQL unavailable at startup prevents listen and leaks no database details', async (t) => {
+  const applicationPort = await getAvailablePort();
+  let databasePort = await getAvailablePort();
+  while (databasePort === applicationPort) {
+    databasePort = await getAvailablePort();
+  }
+  await waitForPortClosed(databasePort, 500);
+
+  const monitor = startPortMonitor(applicationPort);
+  t.after(() => monitor.stop());
+
+  const credentialCanary = 'startup-db-password-canary-DO-NOT-LEAK';
+  const databaseUrl = `postgresql://process_user:${credentialCanary}@127.0.0.1:${String(databasePort)}/startup_failure`;
+  const environment = validEnvironment(applicationPort, {
+    DATABASE_URL: databaseUrl,
+    DB_ACQUIRE_TIMEOUT_MS: '100',
+  });
+  const { child, output: getOutput } = spawnEntry(MAIN_ENTRY, environment);
+  registerChildCleanup(t, child);
+
+  const exit = await waitForExit(child, EXIT_WAIT_MS, getOutput);
+  const wasReachable = await monitor.stop();
+  const output = getOutput();
+
+  assert.notEqual(exit.code, 0);
+  assert.equal(exit.signal, null);
+  assert.equal(wasReachable, false);
+
+  const startupEvents = structuredEvents(output, 'startup_failed');
+  assert.equal(startupEvents.length, 1);
+  assert.deepEqual(startupEvents[0], {
+    event: 'startup_failed',
+    kind: 'bootstrap',
+  });
+
+  for (const forbidden of [
+    credentialCanary,
+    databaseUrl,
+    `127.0.0.1:${String(databasePort)}`,
+    'ECONNREFUSED',
+    'SELECT 1',
+    '@prisma',
+    'PrismaClient',
+  ]) {
+    assert.equal(output.includes(forbidden), false, forbidden);
+  }
+});
+
+test('startup PostgreSQL probe succeeds before listen; live is 200 and readiness remains 503 in C2', async (t) => {
   const port = await getAvailablePort();
   const environment = validEnvironment(port);
   const { child, output: getOutput } = spawnEntry(MAIN_ENTRY, environment);
