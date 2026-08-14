@@ -74,7 +74,11 @@ is enabled.
 
 - Pull requests run dependency review at HIGH severity.
 - CodeQL analyzes JavaScript and TypeScript.
-- Dependabot proposes grouped npm, Docker, and GitHub Actions updates.
+- Dependabot groups only routine npm patch/minor maintenance. Prisma/pg,
+  TypeScript, Node typings, and Testcontainers changes remain individual for
+  explicit compatibility review, and `@types/node` stays on the Node 24 line.
+- Docker base-image and GitHub Actions updates remain individual so digest and
+  full-SHA changes are visible in their own pull requests.
 - Every external workflow action is pinned to a full commit SHA with its release
   version recorded on the same line.
 - Trivy scans the final runtime image. One pass reports all HIGH and CRITICAL

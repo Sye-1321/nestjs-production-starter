@@ -97,6 +97,41 @@ test('CI and dependency automation cover the complete frozen verification surfac
   assert.equal([...dependabot.matchAll(/^\s+directory: \/$/gmu)].length, 3);
 });
 
+test('dependency automation keeps compatibility-sensitive updates explicit', async () => {
+  const dependabot = await read('.github/dependabot.yml');
+  const [npmUpdates, afterNpm] = dependabot.split(
+    '  - package-ecosystem: docker',
+  );
+  const [dockerUpdates, actionsUpdates] = afterNpm.split(
+    '  - package-ecosystem: github-actions',
+  );
+
+  assert.match(npmUpdates, /routine-production-maintenance/u);
+  assert.match(npmUpdates, /routine-development-maintenance/u);
+  assert.equal([...npmUpdates.matchAll(/^\s+update-types:$/gmu)].length, 2);
+  assert.equal([...npmUpdates.matchAll(/^\s+- minor$/gmu)].length, 2);
+  assert.equal([...npmUpdates.matchAll(/^\s+- patch$/gmu)].length, 2);
+
+  for (const dependency of [
+    "'@prisma/*'",
+    "'@testcontainers/*'",
+    "'@types/node'",
+    'pg',
+    'prisma',
+    'testcontainers',
+    'typescript',
+  ]) {
+    assert.match(npmUpdates, new RegExp(`- ${escapeRegex(dependency)}$`, 'mu'));
+  }
+
+  assert.match(
+    npmUpdates,
+    /dependency-name: '@types\/node'\s+versions:\s+- '>=25'/u,
+  );
+  assert.doesNotMatch(dockerUpdates, /^\s+groups:/mu);
+  assert.doesNotMatch(actionsUpdates, /^\s+groups:/mu);
+});
+
 test('Trivy reports every severe finding and blocks only fixable severe findings', async () => {
   const workflow = await read('.github/workflows/container-security.yml');
 
