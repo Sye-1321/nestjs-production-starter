@@ -4,6 +4,9 @@ This repository implements a deliberately small service security baseline. It
 does not claim that application controls replace deployment security, database
 operations, backups, network policy, or platform hardening.
 
+Vulnerability reporting instructions are maintained separately in the root
+[`SECURITY.md`](../SECURITY.md).
+
 ## Application boundary
 
 The HTTP service enables Helmet, rejects unknown DTO fields, enforces a 100 KiB
