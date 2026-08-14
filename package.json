@@ -13,6 +13,7 @@
     "start:prod": "node dist/main.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "prelint": "npm run prisma:generate",
     "lint": "eslint . --max-warnings=0",
     "prisma:generate": "prisma generate",
     "pretypecheck": "npm run prisma:generate",
