@@ -5,7 +5,7 @@
 - Accepted productization commit: `2e9cb179596a37b9c243bbccba4dc324c8725e62`
 - Accepted tree: `c62121db7a120a15e00a876652eccf127015174c`
 - Contract: `docs/spec/v1-contract.md` (frozen and byte-guarded)
-- Contract SHA-256: `c40f8382adc998365c52604102a7b595cd5b2cf0`
+- Contract Git blob SHA-1: `c40f8382adc998365c52604102a7b595cd5b2cf0`
 
 Pull request [#4](https://github.com/Sye-1321/nestjs-production-starter/pull/4)
 merged the six focused productization commits without squashing. Its candidate
