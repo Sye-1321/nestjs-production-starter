@@ -259,6 +259,7 @@ test('real saturated Task pool maps only pg-pool acquisition timeout to sanitize
     LOG_LEVEL: 'info',
     DB_POOL_MAX: '1',
     DB_ACQUIRE_TIMEOUT_MS: String(ACQUIRE_TIMEOUT_MS),
+    DB_STATEMENT_TIMEOUT_MS: '10000',
   });
   const { child, output: getOutput } = spawnEntry(MAIN_ENTRY, environment);
   registerChildCleanup(t, child);

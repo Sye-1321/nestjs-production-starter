@@ -47,6 +47,14 @@ function postTask(port, title, requestId) {
   });
 }
 
+async function dependencyReadyMetric(port) {
+  const response = await requestHttp(port, { pathname: '/metrics' });
+  assert.equal(response.statusCode, 200);
+  const match = /^service_dependency_ready ([01])$/mu.exec(response.body);
+  assert.notEqual(match, null);
+  return Number(match[1]);
+}
+
 async function waitForPostgreSql() {
   const deadline = Date.now() + 20_000;
 
@@ -99,12 +107,14 @@ test('readiness and Task operations recover after the same PostgreSQL container 
     });
   }
   assert.deepEqual(JSON.parse(initialReady.body), { status: 'ready' });
+  assert.equal(await dependencyReadyMetric(port), 1);
 
   await runtime.container.stop(databaseContainer);
   databaseStopped = true;
 
   const unavailableReady = await waitForStatus(port, '/health/ready', 503);
   assert.deepEqual(JSON.parse(unavailableReady.body), { status: 'not_ready' });
+  assert.equal(await dependencyReadyMetric(port), 0);
   assert.equal(child.exitCode, null);
   assert.equal(child.pid, applicationPid);
 
@@ -137,6 +147,7 @@ test('readiness and Task operations recover after the same PostgreSQL container 
 
   const recoveredReady = await waitForStatus(port, '/health/ready', 200);
   assert.deepEqual(JSON.parse(recoveredReady.body), { status: 'ready' });
+  assert.equal(await dependencyReadyMetric(port), 1);
   assert.equal(child.exitCode, null);
   assert.equal(child.pid, applicationPid);
 
