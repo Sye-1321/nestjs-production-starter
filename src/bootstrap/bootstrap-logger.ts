@@ -37,6 +37,12 @@ export class BootstrapLogger {
     this.write(JSON.stringify({ event: 'shutdown_failed' }));
   }
 
+  public shutdownStarted(): void {
+    this.write(
+      JSON.stringify({ event: 'shutdown_started', state: 'DRAINING' }),
+    );
+  }
+
   public forcedShutdown(): void {
     try {
       this.writeFatal(JSON.stringify({ event: 'forced_shutdown' }));

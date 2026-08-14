@@ -70,6 +70,17 @@ test('shutdown failure uses a distinct event identity', () => {
   });
 });
 
+test('normal shutdown exposes the DRAINING lifecycle transition', () => {
+  const captured = captureLogger();
+
+  captured.logger.shutdownStarted();
+
+  assert.deepEqual(JSON.parse(captured.lines[0]), {
+    event: 'shutdown_started',
+    state: 'DRAINING',
+  });
+});
+
 test('forced shutdown uses a distinct synchronous event identity', () => {
   const captured = captureLogger();
 

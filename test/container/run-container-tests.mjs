@@ -6,10 +6,19 @@ const image = `nestjs-production-starter:container-test-${String(process.pid)}`;
 try {
   await run('docker', ['buildx', 'build', '--load', '--tag', image, '.']);
 
-  await run(process.execPath, ['--test', 'test/container/*.test.mjs'], {
-    ...process.env,
-    CONTAINER_TEST_IMAGE: image,
-  });
+  await run(
+    process.execPath,
+    [
+      '--test',
+      '--test-concurrency=1',
+      '--test-timeout=60000',
+      'test/container/*.test.mjs',
+    ],
+    {
+      ...process.env,
+      CONTAINER_TEST_IMAGE: image,
+    },
+  );
 } finally {
   await run('docker', ['image', 'rm', '--force', image], process.env, true);
 }

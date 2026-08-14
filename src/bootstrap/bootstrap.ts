@@ -64,6 +64,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
     lifecycle,
     shutdownTimeoutMs: options.config.shutdownTimeoutMs,
     executeShutdown: async () => {
+      options.logger.shutdownStarted();
       await preListenSettled;
       await closeApplicationResources(server, app);
     },
