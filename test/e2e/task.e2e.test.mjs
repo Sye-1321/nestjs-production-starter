@@ -30,6 +30,9 @@ const TASK_REQUEST_ID = 'c4-real-task-request';
 const ACQUIRE_TIMEOUT_REQUEST_ID = 'c4-db-acquire-timeout';
 const UNEXPECTED_DB_REQUEST_ID = 'c4-unexpected-db-error';
 const ACQUIRE_TIMEOUT_MS = 200;
+const STATEMENT_TIMEOUT_MS = 200;
+const STATEMENT_TIMEOUT_REQUEST_ID = 'm5-db-statement-timeout';
+const STATEMENT_TIMEOUT_CANARY = 'M5_STATEMENT_TIMEOUT_CANARY_6A42';
 
 function postTask(port, title, options = {}) {
   const body = JSON.stringify({ title, ...options.fields });
@@ -392,4 +395,86 @@ test('real saturated Task pool maps only pg-pool acquisition timeout to sanitize
   t.diagnostic(
     `http_acquisition_timeout_ms=${unavailableElapsedMs.toFixed(1)}`,
   );
+});
+
+test('real Task statement timeout maps narrowly to sanitized 503 and recovers', async (t) => {
+  const port = await getAvailablePort();
+  const environment = validEnvironment(port, {
+    LOG_LEVEL: 'info',
+    DB_POOL_MAX: '2',
+    DB_ACQUIRE_TIMEOUT_MS: '1000',
+    DB_STATEMENT_TIMEOUT_MS: String(STATEMENT_TIMEOUT_MS),
+  });
+  const { child, output: getOutput } = spawnEntry(MAIN_ENTRY, environment);
+  registerChildCleanup(t, child);
+  const control = await createControlClient(t);
+
+  await waitForStatus(port, '/health/live', 200, undefined, getOutput);
+  await control.lockTaskTable();
+  const timeoutStartedAt = performance.now();
+  let timeoutResponse;
+  try {
+    timeoutResponse = await postTask(port, STATEMENT_TIMEOUT_CANARY, {
+      headers: { 'x-request-id': STATEMENT_TIMEOUT_REQUEST_ID },
+    });
+  } finally {
+    await control.releaseTaskTable();
+  }
+  const timeoutElapsedMs = performance.now() - timeoutStartedAt;
+
+  assertProblem(timeoutResponse, {
+    status: 503,
+    body: {
+      type: 'urn:nestjs-production-starter:problem:dependency-unavailable',
+      title: 'Service temporarily unavailable',
+      status: 503,
+      detail: 'The service is temporarily unavailable.',
+      code: 'DEPENDENCY_UNAVAILABLE',
+      requestId: STATEMENT_TIMEOUT_REQUEST_ID,
+    },
+  });
+  assert.ok(timeoutElapsedMs >= 140, timeoutElapsedMs);
+  assert.ok(timeoutElapsedMs <= 2_500, timeoutElapsedMs);
+
+  const recoveryResponse = await postTask(
+    port,
+    'M5 post-statement-timeout HTTP recovery',
+    { headers: { 'x-request-id': 'm5-statement-timeout-recovery' } },
+  );
+  assert.equal(recoveryResponse.statusCode, 201);
+  assert.equal(
+    JSON.parse(recoveryResponse.body).title,
+    'M5 post-statement-timeout HTTP recovery',
+  );
+
+  const timeoutEvents = await waitForStructuredEvents(
+    getOutput,
+    'http_request_completed',
+    {
+      count: 1,
+      predicate: (event) => event.request_id === STATEMENT_TIMEOUT_REQUEST_ID,
+    },
+  );
+  assert.equal(timeoutEvents[0].status_code, 503);
+
+  const capturedOutput = getOutput();
+  assert.equal(
+    structuredEvents(capturedOutput, 'http_request_failed').some(
+      (event) => event.request_id === STATEMENT_TIMEOUT_REQUEST_ID,
+    ),
+    false,
+  );
+  for (const forbidden of [
+    STATEMENT_TIMEOUT_CANARY,
+    'PrismaClientKnownRequestError',
+    'DriverAdapterError',
+    'P2039',
+    '57014',
+    'canceling statement due to statement timeout',
+  ]) {
+    assert.equal(capturedOutput.includes(forbidden), false, forbidden);
+    assert.equal(timeoutResponse.body.includes(forbidden), false, forbidden);
+  }
+
+  t.diagnostic(`http_statement_timeout_ms=${timeoutElapsedMs.toFixed(1)}`);
 });

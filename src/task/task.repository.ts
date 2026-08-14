@@ -5,6 +5,7 @@ import {
   DatabaseUnavailableError,
   isObservedPrismaPgPoolAcquisitionTimeout,
   isObservedPrismaPgTaskConnectionRefused,
+  isObservedPrismaPgTaskStatementTimeout,
   isObservedPrismaPgUnexpectedConnectionTermination,
 } from '../platform/database/database.errors.js';
 import { DatabaseService } from '../platform/database/database.service.js';
@@ -46,7 +47,8 @@ function rethrowDatabaseFailure(error: unknown): never {
   if (
     isObservedPrismaPgPoolAcquisitionTimeout(error) ||
     isObservedPrismaPgUnexpectedConnectionTermination(error) ||
-    isObservedPrismaPgTaskConnectionRefused(error)
+    isObservedPrismaPgTaskConnectionRefused(error) ||
+    isObservedPrismaPgTaskStatementTimeout(error)
   ) {
     throw new DatabaseUnavailableError();
   }

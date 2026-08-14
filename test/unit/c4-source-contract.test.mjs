@@ -102,7 +102,7 @@ test('database waits and Task creation contain no fake timeout or transaction me
   }
 });
 
-test('DB classifier has exact pinned pg-pool outage branches', async () => {
+test('DB classifier has exact pinned transient branches', async () => {
   const classifier = await read('src/platform/database/database.errors.ts');
   const repository = await read('src/task/task.repository.ts');
   const filter = await read(
@@ -120,7 +120,7 @@ test('DB classifier has exact pinned pg-pool outage branches', async () => {
   );
   assert.equal(
     [...classifier.matchAll(/export function isObserved/gu)].length,
-    3,
+    4,
   );
   assert.match(
     classifier,
@@ -141,13 +141,26 @@ test('DB classifier has exact pinned pg-pool outage branches', async () => {
     /(?:new\s+RegExp|RegExp\s*\(|\.match\s*\(|\.test\s*\()/u,
   );
   assert.match(classifier, /PG_CONNECTION_REFUSED_CODE = 'ECONNREFUSED'/u);
+  assert.match(classifier, /PRISMA_DATABASE_ERROR_CODE = 'P2039'/u);
+  assert.match(classifier, /PG_STATEMENT_TIMEOUT_CODE = '57014'/u);
   assert.match(classifier, /PrismaClientKnownRequestError/u);
-  assert.doesNotMatch(classifier, /P20\d\d/u);
+  assert.deepEqual(
+    [...classifier.matchAll(/'P20\d\d'/gu)].map((match) => match[0]),
+    ["'P2039'"],
+  );
 
   assert.equal(
     [
       ...repository.matchAll(
         /isObservedPrismaPgPoolAcquisitionTimeout\(error\)/gu,
+      ),
+    ].length,
+    1,
+  );
+  assert.equal(
+    [
+      ...repository.matchAll(
+        /isObservedPrismaPgTaskStatementTimeout\(error\)/gu,
       ),
     ].length,
     1,

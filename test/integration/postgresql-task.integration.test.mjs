@@ -4,18 +4,26 @@ import { performance } from 'node:perf_hooks';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { Client } from 'pg';
+
 import {
   DatabaseUnavailableError,
   isObservedPrismaPgPoolAcquisitionTimeout,
+  isObservedPrismaPgTaskStatementTimeout,
 } from '../../dist/platform/database/database.errors.js';
 import { TaskNotFoundError } from '../../dist/task/task.errors.js';
-import { createDatabaseTestFixture } from '../support/database-test-fixture.mjs';
+import {
+  createDatabaseTestFixture,
+  requiredTestDatabaseUrl,
+} from '../support/database-test-fixture.mjs';
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const ACQUIRE_TIMEOUT_MS = 200;
 const MINIMUM_TIMEOUT_MS = 140;
 const MAXIMUM_TIMEOUT_MS = 700;
+const STATEMENT_TIMEOUT_MS = 200;
+const MAXIMUM_STATEMENT_TIMEOUT_MS = 2_000;
 
 test('external migrate deploy produces the exact Task schema from an empty database', async (t) => {
   const fixture = createDatabaseTestFixture();
@@ -196,4 +204,81 @@ test('real pool acquisition timeout is bounded, drains waiters, classifies narro
     `acquisition_timings_ms=${timings.map((value) => value.toFixed(1)).join(',')}`,
   );
   t.diagnostic(`waiting_count_sequence=${waitingCounts.join(',')}`);
+});
+
+test('real PostgreSQL statement timeout classifies narrowly and leaves the shared pool healthy', async (t) => {
+  const fixture = createDatabaseTestFixture({
+    dbStatementTimeoutMs: STATEMENT_TIMEOUT_MS,
+    dbAcquireTimeoutMs: 1_000,
+  });
+  const control = new Client({
+    connectionString: requiredTestDatabaseUrl(),
+    application_name: 'm5-statement-timeout-control',
+  });
+  let transactionOpen = false;
+
+  t.after(async () => {
+    if (transactionOpen) {
+      await control.query('ROLLBACK');
+    }
+    await control.end();
+    await fixture.cleanup();
+  });
+
+  await control.connect();
+  await control.query('BEGIN');
+  transactionOpen = true;
+  await control.query('LOCK TABLE tasks IN ACCESS EXCLUSIVE MODE');
+
+  const rawStartedAt = performance.now();
+  let rawError;
+  try {
+    await fixture.prisma.task.create({
+      data: { title: 'M5 raw statement timeout' },
+    });
+  } catch (error) {
+    rawError = error;
+  }
+  const rawElapsedMs = performance.now() - rawStartedAt;
+
+  assert.equal(isObservedPrismaPgTaskStatementTimeout(rawError), true);
+  assert.ok(rawElapsedMs >= MINIMUM_TIMEOUT_MS, rawElapsedMs);
+  assert.ok(rawElapsedMs <= MAXIMUM_STATEMENT_TIMEOUT_MS, rawElapsedMs);
+
+  const immediateProbe = await fixture.pool.query('SELECT 1 AS value');
+  assert.equal(immediateProbe.rows[0].value, 1);
+  assert.equal(fixture.pool.waitingCount, 0);
+  assert.deepEqual(fixture.poolErrors, []);
+
+  const staleWork = await control.query({
+    text: `
+      SELECT COUNT(*)::integer AS count
+      FROM pg_stat_activity
+      WHERE application_name = 'nestjs-production-starter'
+        AND state = 'active'
+    `,
+  });
+  assert.equal(staleWork.rows[0].count, 0);
+
+  const mappedStartedAt = performance.now();
+  await assert.rejects(
+    fixture.taskRepository.create('M5 mapped statement timeout'),
+    (error) => error instanceof DatabaseUnavailableError,
+  );
+  const mappedElapsedMs = performance.now() - mappedStartedAt;
+  assert.ok(mappedElapsedMs >= MINIMUM_TIMEOUT_MS, mappedElapsedMs);
+  assert.ok(mappedElapsedMs <= MAXIMUM_STATEMENT_TIMEOUT_MS, mappedElapsedMs);
+
+  await control.query('ROLLBACK');
+  transactionOpen = false;
+  const recovered = await fixture.taskService.create(
+    'M5 post-statement-timeout recovery',
+  );
+  assert.equal(recovered.title, 'M5 post-statement-timeout recovery');
+  assert.equal(fixture.pool.waitingCount, 0);
+  assert.deepEqual(fixture.poolErrors, []);
+
+  t.diagnostic(
+    `statement_timeout_ms=${rawElapsedMs.toFixed(1)} mapped_timeout_ms=${mappedElapsedMs.toFixed(1)}`,
+  );
 });
