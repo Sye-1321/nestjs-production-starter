@@ -52,6 +52,7 @@ function postTask(port, title, options = {}) {
       ...options.headers,
     },
     body,
+    timeoutMs: options.timeoutMs,
   });
 }
 
@@ -120,7 +121,7 @@ async function waitForBlockedApplicationQuery(client, requestOutcome) {
       observedActivity.some(
         (activity) =>
           activity.application_name === 'nestjs-production-starter' &&
-          activity.state === 'active' &&
+          activity.mode === 'RowExclusiveLock' &&
           activity.granted === false,
       )
     ) {
@@ -285,6 +286,7 @@ test('real saturated Task pool maps only pg-pool acquisition timeout to sanitize
   const blockedOutcome = { current: { state: 'pending' } };
   const blockedRequest = postTask(port, 'first blocked task', {
     headers: { 'x-request-id': 'c4-blocked-first-task' },
+    timeoutMs: 15_000,
   });
   void blockedRequest.then(
     (response) => {
