@@ -9,6 +9,7 @@ import { Client } from 'pg';
 
 import {
   MAIN_ENTRY,
+  SHUTDOWN_FIXTURE,
   getAvailablePort,
   registerChildCleanup,
   requestHttp,
@@ -33,6 +34,12 @@ const ACQUIRE_TIMEOUT_MS = 200;
 const STATEMENT_TIMEOUT_MS = 200;
 const STATEMENT_TIMEOUT_REQUEST_ID = 'm5-db-statement-timeout';
 const STATEMENT_TIMEOUT_CANARY = 'M5_STATEMENT_TIMEOUT_CANARY_6A42';
+const HTTP_BOUNDARY_REQUEST_IDS = new Set([
+  'm5-malformed-json',
+  'm5-missing-content-type',
+  'm5-unsupported-content-type',
+  'm5-oversized-body',
+]);
 
 function postTask(port, title, options = {}) {
   const body = JSON.stringify({ title, ...options.fields });
@@ -477,4 +484,139 @@ test('real Task statement timeout maps narrowly to sanitized 503 and recovers', 
   }
 
   t.diagnostic(`http_statement_timeout_ms=${timeoutElapsedMs.toFixed(1)}`);
+});
+
+test('real HTTP malformed, media-type, and oversized inputs fail before Task work', async (t) => {
+  const port = await getAvailablePort();
+  const environment = validEnvironment(port, {
+    LOG_LEVEL: 'info',
+    M5_SHUTDOWN_FIXTURE_MODE: 'http-boundary',
+  });
+  const { child, output: getOutput } = spawnEntry(
+    SHUTDOWN_FIXTURE,
+    environment,
+  );
+  registerChildCleanup(t, child);
+
+  await waitForStatus(port, '/health/live', 200, undefined, getOutput);
+  const malformedBody = '{"title":"M5_MALFORMED_BODY_CANARY_8A31"';
+  const missingMediaBody = JSON.stringify({
+    title: 'M5_MISSING_MEDIA_BODY_CANARY_4E92',
+  });
+  const unsupportedMediaBody = JSON.stringify({
+    title: 'M5_UNSUPPORTED_MEDIA_BODY_CANARY_7C16',
+  });
+  const oversizedBody = JSON.stringify({
+    title: `M5_OVERSIZED_BODY_CANARY_3D57${'x'.repeat(100 * 1024)}`,
+  });
+
+  const cases = [
+    {
+      requestId: 'm5-malformed-json',
+      body: malformedBody,
+      headers: { 'content-type': 'application/json' },
+      expected: {
+        status: 400,
+        body: {
+          type: 'urn:nestjs-production-starter:problem:malformed-json',
+          title: 'Malformed JSON',
+          status: 400,
+          detail: 'The request body contains malformed JSON.',
+          code: 'MALFORMED_JSON',
+          requestId: 'm5-malformed-json',
+        },
+      },
+    },
+    {
+      requestId: 'm5-missing-content-type',
+      body: missingMediaBody,
+      headers: {},
+      expected: {
+        status: 415,
+        body: {
+          type: 'urn:nestjs-production-starter:problem:unsupported-media-type',
+          title: 'Unsupported media type',
+          status: 415,
+          detail: 'The request must use application/json.',
+          code: 'UNSUPPORTED_MEDIA_TYPE',
+          requestId: 'm5-missing-content-type',
+        },
+      },
+    },
+    {
+      requestId: 'm5-unsupported-content-type',
+      body: unsupportedMediaBody,
+      headers: { 'content-type': 'text/plain' },
+      expected: {
+        status: 415,
+        body: {
+          type: 'urn:nestjs-production-starter:problem:unsupported-media-type',
+          title: 'Unsupported media type',
+          status: 415,
+          detail: 'The request must use application/json.',
+          code: 'UNSUPPORTED_MEDIA_TYPE',
+          requestId: 'm5-unsupported-content-type',
+        },
+      },
+    },
+    {
+      requestId: 'm5-oversized-body',
+      body: oversizedBody,
+      headers: { 'content-type': 'application/json' },
+      expected: {
+        status: 413,
+        body: {
+          type: 'urn:nestjs-production-starter:problem:payload-too-large',
+          title: 'Payload too large',
+          status: 413,
+          detail: 'The request body exceeds the maximum allowed size.',
+          code: 'PAYLOAD_TOO_LARGE',
+          requestId: 'm5-oversized-body',
+        },
+      },
+    },
+  ];
+
+  const responses = [];
+  for (const testCase of cases) {
+    const response = await requestHttp(port, {
+      pathname: '/v1/tasks',
+      method: 'POST',
+      headers: {
+        'content-length': String(Buffer.byteLength(testCase.body)),
+        'x-request-id': testCase.requestId,
+        ...testCase.headers,
+      },
+      body: testCase.body,
+    });
+    assertProblem(response, testCase.expected);
+    responses.push(response);
+  }
+
+  const completionEvents = await waitForStructuredEvents(
+    getOutput,
+    'http_request_completed',
+    {
+      count: cases.length,
+      predicate: (event) => HTTP_BOUNDARY_REQUEST_IDS.has(event.request_id),
+    },
+  );
+  assert.deepEqual(
+    completionEvents.map((event) => event.status_code).sort(),
+    [400, 413, 415, 415],
+  );
+
+  const capturedOutput = getOutput();
+  assert.equal(capturedOutput.includes('M5_BOUNDARY_BUSINESS_ENTERED'), false);
+  for (const forbidden of [
+    'M5_MALFORMED_BODY_CANARY_8A31',
+    'M5_MISSING_MEDIA_BODY_CANARY_4E92',
+    'M5_UNSUPPORTED_MEDIA_BODY_CANARY_7C16',
+    'M5_OVERSIZED_BODY_CANARY_3D57',
+  ]) {
+    assert.equal(capturedOutput.includes(forbidden), false, forbidden);
+    for (const response of responses) {
+      assert.equal(response.body.includes(forbidden), false, forbidden);
+    }
+  }
 });

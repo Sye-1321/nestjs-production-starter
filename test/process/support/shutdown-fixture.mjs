@@ -18,6 +18,7 @@ const NATIVE_ABORT_MODE = 'native-abort';
 const DISCONNECT_TITLE = 'M5 disconnect request';
 const NORMAL_TITLE = 'M5 normal keepalive request';
 const UNEXPECTED_5XX_MODE = 'unexpected-5xx';
+const HTTP_BOUNDARY_MODE = 'http-boundary';
 
 const neverSettles = new Promise(() => undefined);
 
@@ -183,6 +184,15 @@ async function run() {
                 500,
                 { cause: new Error('M5_5XX_CAUSE_CANARY_2C94') },
               );
+            };
+          }
+
+          if (MODE === HTTP_BOUNDARY_MODE) {
+            const taskService = app.get(TaskService);
+            const createTask = taskService.create.bind(taskService);
+            taskService.create = (title) => {
+              marker('M5_BOUNDARY_BUSINESS_ENTERED');
+              return createTask(title);
             };
           }
         },
