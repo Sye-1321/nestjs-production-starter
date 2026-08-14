@@ -138,9 +138,12 @@ async function run() {
                   'RELEASE_ABORT',
                   'M5_DISCONNECT_WORK_RELEASED',
                 );
-                const task = await createTask(title);
                 marker('M5_DISCONNECT_WORK_COMPLETED');
-                return task;
+                return {
+                  id: '00000000-0000-4000-8000-000000000005',
+                  title,
+                  createdAt: new Date('2026-08-14T00:00:00.000Z'),
+                };
               }
 
               if (title === NORMAL_TITLE) {
@@ -158,10 +161,13 @@ async function run() {
                     { once: true },
                   );
                 }
-                const task = await createTask(title);
                 completed = true;
                 marker('M5_NORMAL_WORK_COMPLETED');
-                return task;
+                return {
+                  id: '00000000-0000-4000-8000-000000000006',
+                  title,
+                  createdAt: new Date('2026-08-14T00:00:00.000Z'),
+                };
               }
 
               return createTask(title);

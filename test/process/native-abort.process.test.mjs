@@ -108,7 +108,11 @@ test('native request signal aborts active disconnected work without misclassifyi
   );
   const normalOutcome = await normal.outcome;
   assert.equal(normalOutcome.kind, 'response');
-  assert.equal(normalOutcome.statusCode, 201);
+  assert.equal(
+    normalOutcome.statusCode,
+    201,
+    JSON.stringify({ normalOutcome, output: getOutput() }),
+  );
   assert.equal(
     JSON.parse(normalOutcome.body).title,
     'M5 normal keepalive request',
