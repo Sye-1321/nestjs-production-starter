@@ -1,5 +1,7 @@
 import process from 'node:process';
 
+import { HttpException } from '@nestjs/common';
+
 import { BootstrapLogger } from '../../../dist/bootstrap/bootstrap-logger.js';
 import { bootstrap } from '../../../dist/bootstrap/bootstrap.js';
 import { parseEnvironment } from '../../../dist/config/env.validation.js';
@@ -15,6 +17,7 @@ const FORCE_CLEANUP_MODE = 'force-cleanup';
 const NATIVE_ABORT_MODE = 'native-abort';
 const DISCONNECT_TITLE = 'M5 disconnect request';
 const NORMAL_TITLE = 'M5 normal keepalive request';
+const UNEXPECTED_5XX_MODE = 'unexpected-5xx';
 
 const neverSettles = new Promise(() => undefined);
 
@@ -161,6 +164,25 @@ async function run() {
               }
 
               return createTask(title);
+            };
+          }
+
+          if (MODE === UNEXPECTED_5XX_MODE) {
+            const taskService = app.get(TaskService);
+            taskService.create = () => {
+              throw new HttpException(
+                {
+                  statusCode: 500,
+                  message: 'M5_RAW_5XX_MESSAGE_CANARY_51D3',
+                  prisma: 'PrismaClientKnownRequestError',
+                  pg: { sql: 'SELECT * FROM tasks', host: 'db.internal' },
+                  databaseUrl: process.env.DATABASE_URL,
+                  filesystemPath: '/srv/application/internal.ts',
+                  nested: { secret: 'M5_NESTED_5XX_CANARY_8B27' },
+                },
+                500,
+                { cause: new Error('M5_5XX_CAUSE_CANARY_2C94') },
+              );
             };
           }
         },

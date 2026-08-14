@@ -584,7 +584,7 @@ test('public error boundary never logs raw request objects or passes an Error ob
   assert.doesNotMatch(loggerSource, /error\.message/u);
 });
 
-test('Problem Details filter preserves known HttpException values outside unexpected-error logging', async () => {
+test('Problem Details filter preserves only non-5xx and routine readiness HttpException values', async () => {
   const source = await readFile(
     path.join(
       SOURCE_ROOT,
@@ -599,7 +599,7 @@ test('Problem Details filter preserves known HttpException values outside unexpe
     'exception instanceof RequestValidationError',
   );
   const knownHttpIndex = source.lastIndexOf(
-    'if (exception instanceof HttpException)',
+    'exception instanceof HttpException && exception.getStatus() < 500',
   );
   const unexpectedIndex = source.indexOf(
     'this.boundary.unexpected(exception, request, response);',
@@ -609,6 +609,7 @@ test('Problem Details filter preserves known HttpException values outside unexpe
   assert.ok(knownHttpIndex > validationIndex);
   assert.ok(unexpectedIndex > knownHttpIndex);
   assert.match(source, /preserveHttpException\(exception, response\);/u);
+  assert.match(source, /exception\.getStatus\(\) < 500/u);
 });
 
 test('transport-specific HttpException ownership remains inside the HTTP boundary', async () => {

@@ -85,7 +85,7 @@ export class ProblemDetailsExceptionFilter implements ExceptionFilter {
       return;
     }
 
-    if (exception instanceof HttpException) {
+    if (exception instanceof HttpException && exception.getStatus() < 500) {
       preserveHttpException(exception, response);
       return;
     }

@@ -623,6 +623,59 @@ test('known Nest HttpException preserves framework status/response without unexp
   assert.equal(failureLogs, 0);
 });
 
+test('unexpected Nest 5xx HttpException payload is sanitized and logged once', () => {
+  const storage = new RequestContextStorage();
+  const capture = captureDestination();
+  const logger = new ApplicationLogger('info', capture.destination);
+  const boundary = boundaryWithLogger(storage, logger);
+  const filter = new ProblemDetailsExceptionFilter(boundary);
+  const response = responseDouble();
+  const request = requestDouble({
+    method: 'POST',
+    path: '/v1/tasks',
+    route: { path: '/v1/tasks' },
+  });
+  const exception = new HttpException(
+    {
+      statusCode: 500,
+      message: 'RAW_5XX_HTTP_EXCEPTION_CANARY',
+      sql: 'SELECT_5XX_CANARY',
+      nested: { secret: 'NESTED_5XX_CANARY' },
+    },
+    500,
+    { cause: new Error('CAUSE_5XX_CANARY') },
+  );
+
+  storage.run({ requestId: 'unexpected-http-5xx', abortSignal: {} }, () => {
+    filter.catch(exception, hostDouble(request, response));
+  });
+
+  assertProblem(response, {
+    type: 'urn:nestjs-production-starter:problem:internal-error',
+    title: 'Internal server error',
+    status: 500,
+    detail: 'An internal server error occurred.',
+    code: 'INTERNAL_ERROR',
+    requestId: 'unexpected-http-5xx',
+  });
+  const combinedOutput = `${JSON.stringify(response.body)}\n${capture.output()}`;
+  for (const canary of [
+    'RAW_5XX_HTTP_EXCEPTION_CANARY',
+    'SELECT_5XX_CANARY',
+    'NESTED_5XX_CANARY',
+    'CAUSE_5XX_CANARY',
+  ]) {
+    assert.equal(combinedOutput.includes(canary), false, canary);
+  }
+
+  const records = capture.records();
+  assert.equal(records.length, 1);
+  assert.equal(records[0].event, 'http_request_failed');
+  assert.equal(records[0].request_id, 'unexpected-http-5xx');
+  assert.equal(records[0].error_type, 'Error');
+  assert.equal(records[0].route, '/v1/tasks');
+});
+
 test('ordinary Nest NotFoundException remains 404 and is not mislabeled TASK_NOT_FOUND', () => {
   const storage = new RequestContextStorage();
   let failureLogs = 0;
