@@ -54,6 +54,14 @@ Dependency changes must also pass dependency review, CodeQL, and the container
 vulnerability policy. External Actions remain full-SHA pinned with a nearby
 human-readable version comment.
 
+Dependabot groups only routine patch/minor npm maintenance. Prisma/pg,
+TypeScript, Node typings, and Testcontainers updates remain individual because
+they can change observed failure shapes, compiler compatibility, the supported
+Node surface, or infrastructure-test behavior. `@types/node` stays on the Node
+24 line. Any change to those boundaries must revalidate the owning contract and
+real-boundary evidence; Docker and GitHub Actions updates must retain their
+digest or full-SHA pins.
+
 ## Frozen specification
 
 `docs/spec/v1-contract.md` is byte-guarded as the approved v1 architectural and

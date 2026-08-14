@@ -9,15 +9,37 @@ updates:
       time: '06:00'
       timezone: Africa/Nairobi
     open-pull-requests-limit: 10
+    # Routine updates may be grouped. Version-sensitive dependencies stay
+    # individual so their contract evidence is reviewed with the version bump.
     groups:
-      production-dependencies:
+      routine-production-maintenance:
         dependency-type: production
+        update-types:
+          - minor
+          - patch
         patterns:
           - '*'
-      development-dependencies:
+        exclude-patterns:
+          - '@prisma/*'
+          - pg
+      routine-development-maintenance:
         dependency-type: development
+        update-types:
+          - minor
+          - patch
         patterns:
           - '*'
+        exclude-patterns:
+          - '@testcontainers/*'
+          - '@types/node'
+          - prisma
+          - testcontainers
+          - typescript
+    ignore:
+      # The type surface must track the supported Node 24 runtime.
+      - dependency-name: '@types/node'
+        versions:
+          - '>=25'
 
   - package-ecosystem: docker
     directory: /
@@ -27,10 +49,6 @@ updates:
       time: '06:15'
       timezone: Africa/Nairobi
     open-pull-requests-limit: 5
-    groups:
-      container-images:
-        patterns:
-          - '*'
 
   - package-ecosystem: github-actions
     directory: /
@@ -40,7 +58,3 @@ updates:
       time: '06:30'
       timezone: Africa/Nairobi
     open-pull-requests-limit: 5
-    groups:
-      workflow-actions:
-        patterns:
-          - '*'
