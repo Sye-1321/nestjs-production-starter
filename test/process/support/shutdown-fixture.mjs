@@ -9,6 +9,10 @@ import { TaskService } from '../../../dist/task/task.service.js';
 const MODE = process.env.M5_SHUTDOWN_FIXTURE_MODE;
 const ACTIVE_MODE = 'active';
 const KEEP_ALIVE_MODE = 'keep-alive';
+const FORCE_ACTIVE_MODE = 'force-active';
+const FORCE_CLEANUP_MODE = 'force-cleanup';
+
+const neverSettles = new Promise(() => undefined);
 
 function marker(name) {
   process.stdout.write(`${name}\n`);
@@ -52,16 +56,27 @@ async function run() {
             database.onApplicationShutdown.bind(database);
           database.onApplicationShutdown = async () => {
             marker('M5_PROVIDER_CLEANUP_STARTED');
+
+            if (MODE === FORCE_CLEANUP_MODE) {
+              await neverSettles;
+            }
+
             await shutdownDatabase();
             marker('M5_PROVIDER_CLEANUP_COMPLETED');
           };
 
-          if (MODE === ACTIVE_MODE) {
+          if (MODE === ACTIVE_MODE || MODE === FORCE_ACTIVE_MODE) {
             const taskService = app.get(TaskService);
             const createTask = taskService.create.bind(taskService);
             taskService.create = async (title) => {
               marker('M5_ACTIVE_ENTERED');
-              await activeRelease();
+
+              if (MODE === FORCE_ACTIVE_MODE) {
+                await neverSettles;
+              } else {
+                await activeRelease();
+              }
+
               const task = await createTask(title);
               marker('M5_ACTIVE_COMPLETED');
               return task;

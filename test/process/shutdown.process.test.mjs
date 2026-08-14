@@ -32,6 +32,7 @@ const ACTIVE_RELEASED_MARKER = 'M5_ACTIVE_RELEASED';
 const ACTIVE_COMPLETED_MARKER = 'M5_ACTIVE_COMPLETED';
 const BUSINESS_ENTERED_MARKER = 'M5_BUSINESS_ENTERED';
 const SOCKET_WAIT_MS = 3_000;
+const MINIMUM_FORCE_ELAPSED_MS = 700;
 
 function postTask(port, title) {
   const body = JSON.stringify({ title });
@@ -344,5 +345,105 @@ test(
     assert.equal(exit.code, 0);
     assert.equal(exit.signal, null);
     assert.equal(structuredEvents(capturedOutput, 'forced_shutdown').length, 0);
+  },
+);
+
+test(
+  'deadline force-closes active HTTP work and exits non-zero exactly once',
+  { skip: linuxOnly },
+  async (t) => {
+    const port = await getAvailablePort();
+    const environment = validEnvironment(port, {
+      M5_SHUTDOWN_FIXTURE_MODE: 'force-active',
+    });
+    const { child, output: getOutput } = spawnEntry(
+      SHUTDOWN_FIXTURE,
+      environment,
+    );
+    registerChildCleanup(t, child);
+
+    await waitForStatus(port, '/health/live', 200, undefined, getOutput);
+    const requestOutcome = postTask(port, 'M5 force active request').then(
+      (response) => ({ kind: 'response', response }),
+      (error) => ({
+        kind: 'closed',
+        code: error instanceof Error ? error.code : undefined,
+      }),
+    );
+    await waitForOutput(
+      getOutput,
+      ACTIVE_ENTERED_MARKER,
+      SHUTDOWN_TOLERANCE_MS,
+    );
+
+    const shutdownStartedAt = Date.now();
+    assert.equal(child.kill('SIGTERM'), true);
+    await waitForOutput(getOutput, DRAINING_MARKER, SHUTDOWN_TOLERANCE_MS);
+    assert.equal(child.kill('SIGINT'), true);
+
+    const exit = await waitForExit(
+      child,
+      TEST_SHUTDOWN_TIMEOUT_MS + SHUTDOWN_TOLERANCE_MS,
+      getOutput,
+    );
+    const elapsedMs = Date.now() - shutdownStartedAt;
+    const activeOutcome = await requestOutcome;
+    const capturedOutput = getOutput();
+
+    assert.equal(activeOutcome.kind, 'closed');
+    assert.equal(exit.code, 1);
+    assert.equal(exit.signal, null);
+    assert.ok(elapsedMs >= MINIMUM_FORCE_ELAPSED_MS, elapsedMs);
+    assert.ok(
+      elapsedMs <= TEST_SHUTDOWN_TIMEOUT_MS + SHUTDOWN_TOLERANCE_MS,
+      elapsedMs,
+    );
+    assert.equal(structuredEvents(capturedOutput, 'forced_shutdown').length, 1);
+    assert.equal(capturedOutput.includes(CLEANUP_STARTED_MARKER), false);
+    assert.equal(capturedOutput.includes(ACTIVE_COMPLETED_MARKER), false);
+  },
+);
+
+test(
+  'the original deadline force-bounds provider cleanup after HTTP drain',
+  { skip: linuxOnly },
+  async (t) => {
+    const port = await getAvailablePort();
+    const environment = validEnvironment(port, {
+      M5_SHUTDOWN_FIXTURE_MODE: 'force-cleanup',
+    });
+    const { child, output: getOutput } = spawnEntry(
+      SHUTDOWN_FIXTURE,
+      environment,
+    );
+    registerChildCleanup(t, child);
+
+    await waitForStatus(port, '/health/live', 200, undefined, getOutput);
+    const shutdownStartedAt = Date.now();
+    assert.equal(child.kill('SIGTERM'), true);
+    await waitForOutput(
+      getOutput,
+      CLEANUP_STARTED_MARKER,
+      SHUTDOWN_TOLERANCE_MS,
+    );
+    assert.equal(getOutput().includes(CLEANUP_COMPLETED_MARKER), false);
+
+    const exit = await waitForExit(
+      child,
+      TEST_SHUTDOWN_TIMEOUT_MS + SHUTDOWN_TOLERANCE_MS,
+      getOutput,
+    );
+    const elapsedMs = Date.now() - shutdownStartedAt;
+    const capturedOutput = getOutput();
+
+    assert.equal(exit.code, 1);
+    assert.equal(exit.signal, null);
+    assert.ok(elapsedMs >= MINIMUM_FORCE_ELAPSED_MS, elapsedMs);
+    assert.ok(
+      elapsedMs <= TEST_SHUTDOWN_TIMEOUT_MS + SHUTDOWN_TOLERANCE_MS,
+      elapsedMs,
+    );
+    assert.equal(structuredEvents(capturedOutput, 'forced_shutdown').length, 1);
+    assert.equal(capturedOutput.includes(CLEANUP_COMPLETED_MARKER), false);
   },
 );
