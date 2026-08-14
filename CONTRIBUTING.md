@@ -2,13 +2,13 @@
 
 Implementation follows the frozen v1 specification and proceeds one milestone at a time.
 
-For M0 changes:
+For every change:
 
 - use Node.js `24.19.0` and npm `11.17.0`;
 - keep `package-lock.json` synchronized with `package.json`;
-- do not introduce functionality assigned to M1 or later;
+- preserve the current milestone boundary and frozen v1 scope;
 - keep TypeScript strict and do not weaken lint/typecheck settings to make checks pass;
-- run the complete M0 verification gate before review.
+- run the complete verification gate before review.
 
 Required gate:
 
@@ -18,7 +18,15 @@ npm run format:check
 npm run lint
 npm run typecheck
 npm run build
+npm run test:unit
+npm run test:integration
+npm run test:e2e
+npm run test:process
+npm run test:container
 ```
+
+The same commands run in GitHub Actions. Linux is authoritative for POSIX
+signal and final-container behavior.
 
 ## Frozen specification
 

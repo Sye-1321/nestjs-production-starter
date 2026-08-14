@@ -60,10 +60,16 @@ npm run lint
 npm run typecheck
 npm run build
 npm run test:unit
+npm run test:integration
+npm run test:e2e
 npm run test:process
+npm run test:container
 ```
 
-The process suite includes Linux-specific signal semantics. Windows runs provide useful development evidence, while authoritative POSIX `SIGTERM` behavior is verified on Linux.
+These exact commands run in GitHub Actions. The process suite includes
+Linux-specific signal semantics. Windows runs provide useful development
+evidence, while authoritative POSIX `SIGTERM` and final-container behavior is
+verified on Linux.
 
 ## Scope boundary
 
