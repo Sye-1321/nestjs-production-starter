@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import path from 'node:path';
 import process from 'node:process';
 
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
@@ -12,6 +13,13 @@ const TEST_ARGUMENTS = [
   '--test-concurrency=1',
   'test/process/*.test.mjs',
 ];
+const PRISMA_CLI = path.join(
+  process.cwd(),
+  'node_modules',
+  'prisma',
+  'build',
+  'index.js',
+);
 
 let container;
 let exitCode = 1;
@@ -22,8 +30,20 @@ try {
     .withUsername(TEST_USERNAME)
     .withPassword(TEST_PASSWORD)
     .start();
+  const databaseUrl = container.getConnectionUri();
 
-  exitCode = await runProcessTests(container.getConnectionUri());
+  const migrationExitCode = await runNode(
+    [PRISMA_CLI, 'migrate', 'deploy'],
+    { ...process.env, DATABASE_URL: databaseUrl },
+    'Prisma migration deployment',
+  );
+  if (migrationExitCode !== 0) {
+    throw new Error(
+      `Prisma migration deployment exited ${String(migrationExitCode)}`,
+    );
+  }
+
+  exitCode = await runProcessTests(databaseUrl);
 } catch (error) {
   const message =
     error instanceof Error ? error.message : 'unknown Testcontainers failure';
@@ -46,13 +66,21 @@ try {
 process.exitCode = exitCode;
 
 function runProcessTests(databaseUrl) {
+  return runNode(
+    TEST_ARGUMENTS,
+    {
+      ...process.env,
+      PROCESS_TEST_DATABASE_URL: databaseUrl,
+    },
+    'Process test suite',
+  );
+}
+
+function runNode(arguments_, environment, label) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, TEST_ARGUMENTS, {
+    const child = spawn(process.execPath, arguments_, {
       cwd: process.cwd(),
-      env: {
-        ...process.env,
-        PROCESS_TEST_DATABASE_URL: databaseUrl,
-      },
+      env: environment,
       shell: false,
       stdio: 'inherit',
     });
@@ -60,10 +88,7 @@ function runProcessTests(databaseUrl) {
     child.once('error', reject);
     child.once('close', (code, signal) => {
       if (signal !== null) {
-        process.stderr.write(
-          `Process-test runner terminated by signal ${signal}.\n`,
-        );
-        resolve(1);
+        reject(new Error(`${label} terminated by signal ${signal}`));
         return;
       }
 

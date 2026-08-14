@@ -91,10 +91,12 @@ for hidden shared state.
 ### Process
 
 `npm run test:process` starts a PostgreSQL Testcontainer and spawns compiled Node
-processes with controlled environment and captured stdout/stderr. It exercises
-fail-before-listen startup, raw duplicate request-ID headers, secret canaries,
-native request abort, active-request drain, keep-alive races, forced deadlines,
-and provider-cleanup hangs.
+processes with controlled environment and captured stdout/stderr. The harness
+applies the committed migration externally before spawning those processes; the
+application itself still never migrates. The suite exercises fail-before-listen
+startup, raw duplicate request-ID headers, secret canaries, native request abort,
+active-request drain, keep-alive races, forced deadlines, and provider-cleanup
+hangs.
 
 POSIX signal cases are marked skipped on non-Linux hosts because Windows process
 termination is not equivalent evidence. This is an explained platform skip, not

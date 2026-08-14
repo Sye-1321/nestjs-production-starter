@@ -152,8 +152,10 @@ test('process suite uses one PostgreSQL Testcontainer and remains serialized', a
   assert.match(runner, /PROCESS_TEST_DATABASE_URL/u);
   assert.match(runner, /['"]--test-concurrency=1['"]/u);
   assert.match(runner, /['"]test\/process\/\*\.test\.mjs['"]/u);
+  assert.match(runner, /PRISMA_CLI/u);
+  assert.match(runner, /['"]migrate['"],\s*['"]deploy['"]/u);
+  assert.match(runner, /DATABASE_URL:\s*databaseUrl/u);
   assert.match(runner, /await\s+container\.stop\(\)/u);
-  assert.doesNotMatch(runner, /\bprisma\s+migrate\b/iu);
   assert.doesNotMatch(runner, /Promise\.race\s*\(/u);
 });
 
