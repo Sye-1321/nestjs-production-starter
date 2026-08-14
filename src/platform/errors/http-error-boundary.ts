@@ -3,34 +3,17 @@ import type { Request, Response } from 'express';
 
 import { RequestContextStorage } from '../context/request-context.js';
 import {
+  matchedHttpRoute,
+  normalizeHttpMethod,
+} from '../http/http-telemetry.js';
+import {
   ApplicationLogger,
   type HttpFailureErrorType,
-  type LoggedHttpMethod,
 } from '../logging/application-logger.js';
 import { type ProblemCode, PROBLEM_CATALOGUE } from './problem-catalogue.js';
 import { createProblemDetails } from './problem-details.js';
 
 export const PROBLEM_DETAILS_CONTENT_TYPE = 'application/problem+json';
-
-function normalizeMethod(method: string): LoggedHttpMethod {
-  switch (method) {
-    case 'GET':
-    case 'POST':
-    case 'PUT':
-    case 'PATCH':
-    case 'DELETE':
-    case 'HEAD':
-    case 'OPTIONS':
-      return method;
-    default:
-      return 'OTHER';
-  }
-}
-
-function matchedRoute(request: Request): string {
-  const route = request.route as { readonly path?: unknown } | undefined;
-  return typeof route?.path === 'string' ? route.path : 'UNMATCHED';
-}
 
 function normalizeErrorType(error: unknown): HttpFailureErrorType {
   if (error instanceof TypeError) {
@@ -73,8 +56,8 @@ export class HttpErrorBoundary {
     this.logger.httpRequestFailed({
       requestId,
       errorType: normalizeErrorType(error),
-      method: normalizeMethod(request.method),
-      route: matchedRoute(request),
+      method: normalizeHttpMethod(request.method),
+      route: matchedHttpRoute(request),
     });
     this.write(response, 'INTERNAL_ERROR', requestId);
   }

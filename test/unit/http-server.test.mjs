@@ -45,6 +45,7 @@ test('HTTP application installs the complete pre-router policy in frozen order',
           },
   });
   const requestContextMiddleware = middleware('context');
+  const requestMetricsMiddleware = middleware('metrics');
   const requestLoggingMiddleware = middleware('logging');
   const drainingGateMiddleware = middleware('draining');
   const taskContentTypeMiddleware = middleware('content-type');
@@ -63,6 +64,7 @@ test('HTTP application installs the complete pre-router policy in frozen order',
   configureHttpApplication(
     app,
     requestContextMiddleware,
+    requestMetricsMiddleware,
     requestLoggingMiddleware,
     drainingGateMiddleware,
     taskContentTypeMiddleware,
@@ -70,23 +72,31 @@ test('HTTP application installs the complete pre-router policy in frozen order',
   );
 
   assert.equal(JSON_BODY_LIMIT_BYTES, 102_400);
-  assert.equal(registrations.length, 7);
+  assert.equal(registrations.length, 8);
   assert.equal(registrations[0].kind, 'middleware');
   assert.equal(registrations[1].kind, 'middleware');
   assert.equal(registrations[2].kind, 'middleware');
   assert.equal(registrations[3].kind, 'middleware');
   assert.equal(registrations[4].kind, 'middleware');
-  assert.deepEqual(registrations[5], {
+  assert.equal(registrations[5].kind, 'middleware');
+  assert.deepEqual(registrations[6], {
     kind: 'body-parser',
     parser: 'json',
     options: { limit: 102_400 },
   });
-  assert.equal(registrations[6].kind, 'middleware');
-  assert.equal(registrations[6].value.length, 4);
+  assert.equal(registrations[7].kind, 'middleware');
+  assert.equal(registrations[7].value.length, 4);
 
   registrations[0].value();
   registrations[1].value();
-  registrations[3].value();
+  registrations[2].value();
   registrations[4].value();
-  assert.deepEqual(calls, ['context', 'logging', 'draining', 'content-type']);
+  registrations[5].value();
+  assert.deepEqual(calls, [
+    'context',
+    'metrics',
+    'logging',
+    'draining',
+    'content-type',
+  ]);
 });

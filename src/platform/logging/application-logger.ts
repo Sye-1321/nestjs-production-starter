@@ -1,6 +1,7 @@
 import pino, { type DestinationStream, type Logger } from 'pino';
 
 import type { LogLevel } from '../../config/config.types.js';
+import type { BoundedHttpMethod } from '../http/http-telemetry.js';
 
 const SERVICE_NAME = 'nestjs-production-starter';
 const REQUEST_COMPLETION_EVENT = 'http_request_completed';
@@ -9,8 +10,6 @@ const DATABASE_POOL_ERROR_EVENT = 'database_pool_error';
 const DATABASE_CLEANUP_FAILURE_EVENT = 'database_cleanup_failed';
 
 export type RequestLogLevel = 'debug' | 'info';
-export type LoggedHttpMethod =
-  'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS' | 'OTHER';
 export type DatabaseCleanupPhase = 'prisma_disconnect' | 'pool_end';
 
 export type HttpFailureErrorType =
@@ -23,7 +22,7 @@ export type HttpFailureErrorType =
 
 export interface RequestCompletion {
   readonly requestId: string;
-  readonly method: LoggedHttpMethod;
+  readonly method: BoundedHttpMethod;
   readonly route: string;
   readonly statusCode: number;
   readonly durationMs: number;
@@ -32,7 +31,7 @@ export interface RequestCompletion {
 export interface HttpRequestFailure {
   readonly requestId: string;
   readonly errorType: HttpFailureErrorType;
-  readonly method: LoggedHttpMethod;
+  readonly method: BoundedHttpMethod;
   readonly route: string;
 }
 

@@ -43,6 +43,29 @@ test('separate MetricsService instances own isolated non-global registries', asy
   assert.match(secondOutput, /^service_dependency_ready 0$/mu);
 });
 
+test('application metric recording emits only the fixed bounded label set', async () => {
+  const metrics = new MetricsService();
+
+  metrics.recordHttpRequest(
+    { method: 'POST', route: '/v1/tasks', status_code: '201' },
+    0.125,
+  );
+  metrics.recordTaskCreated();
+  metrics.setDependencyReady(true);
+
+  const output = await metrics.render();
+  assert.match(
+    output,
+    /^http_server_requests_total\{method="POST",route="\/v1\/tasks",status_code="201"\} 1$/mu,
+  );
+  assert.match(
+    output,
+    /^http_server_request_duration_seconds_count\{method="POST",route="\/v1\/tasks",status_code="201"\} 1$/mu,
+  );
+  assert.match(output, /^tasks_created_total 1$/mu);
+  assert.match(output, /^service_dependency_ready 1$/mu);
+});
+
 test('metrics controller renders the owned registry', async () => {
   const metrics = { render: async () => 'metrics-payload' };
   const controller = new MetricsController(metrics);

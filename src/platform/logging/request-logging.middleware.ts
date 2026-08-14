@@ -4,37 +4,19 @@ import { performance } from 'node:perf_hooks';
 
 import { RequestContextStorage } from '../context/request-context.js';
 import {
+  matchedHttpRoute,
+  normalizeHttpMethod,
+} from '../http/http-telemetry.js';
+import {
   ApplicationLogger,
-  type LoggedHttpMethod,
   type RequestLogLevel,
 } from './application-logger.js';
 
-const UNMATCHED_ROUTE = 'UNMATCHED';
 const SUCCESSFUL_OPERATIONAL_ROUTES = new Set([
   '/health/live',
   '/health/ready',
   '/metrics',
 ]);
-
-function normalizeMethod(method: string): LoggedHttpMethod {
-  switch (method) {
-    case 'GET':
-    case 'POST':
-    case 'PUT':
-    case 'PATCH':
-    case 'DELETE':
-    case 'HEAD':
-    case 'OPTIONS':
-      return method;
-    default:
-      return 'OTHER';
-  }
-}
-
-function matchedRoute(request: Request): string {
-  const route = request.route as { readonly path?: unknown } | undefined;
-  return typeof route?.path === 'string' ? route.path : UNMATCHED_ROUTE;
-}
 
 function completionLevel(route: string, statusCode: number): RequestLogLevel {
   const successful = statusCode >= 200 && statusCode < 300;
@@ -60,11 +42,11 @@ export class RequestLoggingMiddleware implements NestMiddleware<
     }
 
     const requestId = requestContext.requestId;
-    const method = normalizeMethod(request.method);
+    const method = normalizeHttpMethod(request.method);
     const startedAt = performance.now();
 
     response.once('finish', () => {
-      const route = matchedRoute(request);
+      const route = matchedHttpRoute(request);
       const durationMs = performance.now() - startedAt;
 
       this.logger.requestCompleted(

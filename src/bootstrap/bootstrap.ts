@@ -13,6 +13,7 @@ import { ProblemDetailsExceptionFilter } from '../platform/errors/problem-detail
 import { StrictValidationPipe } from '../platform/errors/strict-validation.pipe.js';
 import { TaskContentTypeMiddleware } from '../platform/errors/task-content-type.middleware.js';
 import { RequestLoggingMiddleware } from '../platform/logging/request-logging.middleware.js';
+import { RequestMetricsMiddleware } from '../platform/metrics/request-metrics.middleware.js';
 import { BootstrapLogger } from './bootstrap-logger.js';
 import {
   configureHttpApplication,
@@ -94,6 +95,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
 
     const databaseService = app.get(DatabaseService);
     const requestContextMiddleware = app.get(RequestContextMiddleware);
+    const requestMetricsMiddleware = app.get(RequestMetricsMiddleware);
     const requestLoggingMiddleware = app.get(RequestLoggingMiddleware);
     const drainingGateMiddleware = app.get(DrainingGateMiddleware);
     const taskContentTypeMiddleware = app.get(TaskContentTypeMiddleware);
@@ -107,6 +109,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
     configureHttpApplication(
       app,
       requestContextMiddleware,
+      requestMetricsMiddleware,
       requestLoggingMiddleware,
       drainingGateMiddleware,
       taskContentTypeMiddleware,

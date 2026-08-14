@@ -66,3 +66,65 @@ test('baseline metrics are exact and pull-only', async () => {
     assert.doesNotMatch(combined, forbidden);
   }
 });
+
+test('request metrics use only the shared bounded method, route, and status labels', async () => {
+  const telemetry = await read('src/platform/http/http-telemetry.ts');
+  const middleware = await read(
+    'src/platform/metrics/request-metrics.middleware.ts',
+  );
+  const service = await read('src/platform/metrics/metrics.service.ts');
+  const logging = await read(
+    'src/platform/logging/request-logging.middleware.ts',
+  );
+  const boundary = await read('src/platform/errors/http-error-boundary.ts');
+
+  assert.match(service, /\['method', 'route', 'status_code'\] as const/u);
+  assert.match(telemetry, /UNMATCHED/u);
+  assert.match(telemetry, /OTHER_HTTP_METHOD/u);
+  assert.match(telemetry, /OTHER_HTTP_STATUS/u);
+
+  for (const consumer of [middleware, logging, boundary]) {
+    assert.match(consumer, /normalizeHttpMethod/u);
+    assert.match(consumer, /matchedHttpRoute/u);
+  }
+  assert.match(middleware, /normalizeHttpStatus/u);
+
+  for (const pattern of [
+    /request\.url/u,
+    /request\.originalUrl/u,
+    /request\.query/u,
+    /request\.body/u,
+    /request\.headers/u,
+    /requestId/u,
+    /taskId/u,
+    /userAgent/u,
+    /errorMessage/u,
+  ]) {
+    assert.doesNotMatch(middleware, pattern);
+    assert.doesNotMatch(service, pattern);
+  }
+});
+
+test('request metrics register before completion logging and readiness owns the dependency gauge', async () => {
+  const bootstrap = await read('src/bootstrap/bootstrap.ts');
+  const httpServer = await read('src/bootstrap/http-server.ts');
+  const readiness = await read('src/platform/health/readiness.service.ts');
+
+  const metricsResolve = bootstrap.indexOf('app.get(RequestMetricsMiddleware)');
+  const loggingResolve = bootstrap.indexOf('app.get(RequestLoggingMiddleware)');
+  const metricsRegistration = httpServer.indexOf(
+    'app.use(requestMetricsMiddleware.use.bind(requestMetricsMiddleware));',
+  );
+  const loggingRegistration = httpServer.indexOf(
+    'app.use(requestLoggingMiddleware.use.bind(requestLoggingMiddleware));',
+  );
+
+  assert.ok(metricsResolve >= 0);
+  assert.ok(loggingResolve > metricsResolve);
+  assert.ok(metricsRegistration >= 0);
+  assert.ok(loggingRegistration > metricsRegistration);
+  assert.equal(
+    [...readiness.matchAll(/this\.metrics\.setDependencyReady\(/gu)].length,
+    3,
+  );
+});

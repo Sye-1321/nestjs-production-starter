@@ -126,6 +126,9 @@ test('production bootstrap installs HTTP policy, global pipe, and global filter 
   const requestLoggingResolveIndex = source.indexOf(
     'app.get(RequestLoggingMiddleware)',
   );
+  const requestMetricsResolveIndex = source.indexOf(
+    'app.get(RequestMetricsMiddleware)',
+  );
   const drainingGateResolveIndex = source.indexOf(
     'app.get(DrainingGateMiddleware)',
   );
@@ -156,7 +159,8 @@ test('production bootstrap installs HTTP policy, global pipe, and global filter 
   assert.ok(createIndex >= 0);
   assert.ok(source.indexOf('bodyParser: false', createIndex) > createIndex);
   assert.ok(requestContextResolveIndex > createIndex);
-  assert.ok(requestLoggingResolveIndex > requestContextResolveIndex);
+  assert.ok(requestMetricsResolveIndex > requestContextResolveIndex);
+  assert.ok(requestLoggingResolveIndex > requestMetricsResolveIndex);
   assert.ok(drainingGateResolveIndex > requestLoggingResolveIndex);
   assert.ok(contentTypeResolveIndex > drainingGateResolveIndex);
   assert.ok(parserErrorResolveIndex > contentTypeResolveIndex);
@@ -171,7 +175,7 @@ test('production bootstrap installs HTTP policy, global pipe, and global filter 
   assert.ok(listenIndex > initIndex);
 });
 
-test('HTTP application policy orders context, logging, Helmet, drain, media type, parser, and parser errors', async () => {
+test('HTTP application policy orders context, metrics, logging, Helmet, drain, media type, parser, and parser errors', async () => {
   const source = await readFile(
     path.join(SOURCE_ROOT, 'bootstrap', 'http-server.ts'),
     'utf8',
@@ -182,6 +186,9 @@ test('HTTP application policy orders context, logging, Helmet, drain, media type
   );
   const requestLoggingIndex = source.indexOf(
     'app.use(requestLoggingMiddleware.use.bind(requestLoggingMiddleware));',
+  );
+  const requestMetricsIndex = source.indexOf(
+    'app.use(requestMetricsMiddleware.use.bind(requestMetricsMiddleware));',
   );
   const helmetIndex = source.indexOf('app.use(helmet());');
   const drainingGateIndex = source.indexOf(
@@ -200,7 +207,8 @@ test('HTTP application policy orders context, logging, Helmet, drain, media type
   assert.match(source, /import helmet from ['"]helmet['"];?/u);
   assert.doesNotMatch(source, /from ['"]express['"]/u);
   assert.ok(requestContextIndex >= 0);
-  assert.ok(requestLoggingIndex > requestContextIndex);
+  assert.ok(requestMetricsIndex > requestContextIndex);
+  assert.ok(requestLoggingIndex > requestMetricsIndex);
   assert.ok(helmetIndex > requestLoggingIndex);
   assert.ok(drainingGateIndex > helmetIndex);
   assert.ok(contentTypeIndex > drainingGateIndex);
