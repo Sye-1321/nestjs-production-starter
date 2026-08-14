@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
+import net from 'node:net';
 import process from 'node:process';
 import test from 'node:test';
+import { clearTimeout, setTimeout as scheduleTimeout } from 'node:timers';
 
 import {
   SHUTDOWN_FIXTURE,
@@ -28,6 +30,8 @@ const CLEANUP_COMPLETED_MARKER = 'M5_PROVIDER_CLEANUP_COMPLETED';
 const ACTIVE_ENTERED_MARKER = 'M5_ACTIVE_ENTERED';
 const ACTIVE_RELEASED_MARKER = 'M5_ACTIVE_RELEASED';
 const ACTIVE_COMPLETED_MARKER = 'M5_ACTIVE_COMPLETED';
+const BUSINESS_ENTERED_MARKER = 'M5_BUSINESS_ENTERED';
+const SOCKET_WAIT_MS = 3_000;
 
 function postTask(port, title) {
   const body = JSON.stringify({ title });
@@ -40,6 +44,132 @@ function postTask(port, title) {
     },
     body,
   });
+}
+
+function responseLength(rawResponse) {
+  const separatorIndex = rawResponse.indexOf('\r\n\r\n');
+  if (separatorIndex < 0) {
+    return undefined;
+  }
+
+  const headerBlock = rawResponse.slice(0, separatorIndex);
+  const contentLengthMatch = /\r\ncontent-length:\s*(\d+)\r?$/imu.exec(
+    `\r\n${headerBlock}`,
+  );
+  if (contentLengthMatch === null) {
+    return undefined;
+  }
+
+  return separatorIndex + 4 + Number(contentLengthMatch[1]);
+}
+
+function waitForSocketResponse(socket, initialData = '') {
+  return new Promise((resolve, reject) => {
+    let rawResponse = initialData;
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      socket.off('data', onData);
+      socket.off('error', onError);
+      socket.off('end', onEnd);
+      socket.off('close', onClose);
+    };
+    const settle = (outcome) => {
+      cleanup();
+      resolve(outcome);
+    };
+    const checkComplete = () => {
+      const length = responseLength(rawResponse);
+      if (length !== undefined && rawResponse.length >= length) {
+        settle({ kind: 'response', rawResponse: rawResponse.slice(0, length) });
+      }
+    };
+    const onData = (chunk) => {
+      rawResponse += chunk;
+      checkComplete();
+    };
+    const onError = (error) => {
+      settle({ kind: 'closed', code: error.code });
+    };
+    const onEnd = () => {
+      if (rawResponse.length === 0) {
+        settle({ kind: 'closed' });
+        return;
+      }
+
+      const length = responseLength(rawResponse);
+      if (length !== undefined && rawResponse.length >= length) {
+        settle({ kind: 'response', rawResponse: rawResponse.slice(0, length) });
+        return;
+      }
+
+      reject(new Error('Persistent socket ended with an incomplete response'));
+    };
+    const onClose = () => {
+      if (rawResponse.length === 0) {
+        settle({ kind: 'closed' });
+      }
+    };
+    const timer = scheduleTimeout(() => {
+      cleanup();
+      reject(new Error('Persistent socket did not settle within its bound'));
+    }, SOCKET_WAIT_MS);
+
+    socket.setEncoding('latin1');
+    socket.on('data', onData);
+    socket.once('error', onError);
+    socket.once('end', onEnd);
+    socket.once('close', onClose);
+    checkComplete();
+  });
+}
+
+async function openPersistentConnection(port) {
+  const socket = net.createConnection({ host: '127.0.0.1', port });
+  await new Promise((resolve, reject) => {
+    socket.once('connect', resolve);
+    socket.once('error', reject);
+  });
+
+  const response = waitForSocketResponse(socket);
+  socket.write(
+    [
+      'GET /health/live HTTP/1.1',
+      `Host: 127.0.0.1:${String(port)}`,
+      'Connection: keep-alive',
+      '',
+      '',
+    ].join('\r\n'),
+    'latin1',
+  );
+  const outcome = await response;
+  assert.equal(outcome.kind, 'response');
+  assert.match(outcome.rawResponse, /^HTTP\/1\.1 200 /u);
+  assert.match(outcome.rawResponse, /\r\nconnection: keep-alive\r\n/iu);
+
+  return socket;
+}
+
+function attemptTaskOnPersistentConnection(socket, port) {
+  if (socket.destroyed) {
+    return Promise.resolve({ kind: 'closed' });
+  }
+
+  const body = JSON.stringify({ title: 'M5 post-draining Task' });
+  const outcome = waitForSocketResponse(socket);
+  socket.write(
+    [
+      'POST /v1/tasks HTTP/1.1',
+      `Host: 127.0.0.1:${String(port)}`,
+      'Content-Type: application/json',
+      `Content-Length: ${String(Buffer.byteLength(body))}`,
+      'Connection: keep-alive',
+      '',
+      body,
+    ].join('\r\n'),
+    'latin1',
+  );
+  return outcome;
 }
 
 test(
@@ -160,6 +290,59 @@ test(
         capturedOutput.indexOf(CLEANUP_STARTED_MARKER),
     );
     assert.equal(structuredEvents(capturedOutput, 'shutdown_failed').length, 0);
+    assert.equal(structuredEvents(capturedOutput, 'forced_shutdown').length, 0);
+  },
+);
+
+test(
+  'a pre-existing keep-alive transport starts no Task work after DRAINING',
+  { skip: linuxOnly },
+  async (t) => {
+    const port = await getAvailablePort();
+    const environment = validEnvironment(port, {
+      M5_SHUTDOWN_FIXTURE_MODE: 'keep-alive',
+    });
+    const { child, output: getOutput } = spawnEntry(
+      SHUTDOWN_FIXTURE,
+      environment,
+    );
+    registerChildCleanup(t, child);
+
+    await waitForStatus(port, '/health/live', 200, undefined, getOutput);
+    const socket = await openPersistentConnection(port);
+    t.after(() => socket.destroy());
+
+    assert.equal(child.kill('SIGTERM'), true);
+    await waitForOutput(getOutput, DRAINING_MARKER, SHUTDOWN_TOLERANCE_MS);
+    const postDrainingOutcome = await attemptTaskOnPersistentConnection(
+      socket,
+      port,
+    );
+
+    const exit = await waitForExit(
+      child,
+      TEST_SHUTDOWN_TIMEOUT_MS + SHUTDOWN_TOLERANCE_MS,
+      getOutput,
+    );
+    const capturedOutput = getOutput();
+
+    if (postDrainingOutcome.kind === 'response') {
+      assert.match(postDrainingOutcome.rawResponse, /^HTTP\/1\.1 503 /u);
+      assert.match(
+        postDrainingOutcome.rawResponse,
+        /\r\ncontent-type: application\/problem\+json/iu,
+      );
+      assert.match(
+        postDrainingOutcome.rawResponse,
+        /\r\nconnection: close\r\n/iu,
+      );
+    } else {
+      assert.equal(postDrainingOutcome.kind, 'closed');
+    }
+
+    assert.equal(capturedOutput.includes(BUSINESS_ENTERED_MARKER), false);
+    assert.equal(exit.code, 0);
+    assert.equal(exit.signal, null);
     assert.equal(structuredEvents(capturedOutput, 'forced_shutdown').length, 0);
   },
 );

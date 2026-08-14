@@ -8,6 +8,7 @@ import { TaskService } from '../../../dist/task/task.service.js';
 
 const MODE = process.env.M5_SHUTDOWN_FIXTURE_MODE;
 const ACTIVE_MODE = 'active';
+const KEEP_ALIVE_MODE = 'keep-alive';
 
 function marker(name) {
   process.stdout.write(`${name}\n`);
@@ -64,6 +65,15 @@ async function run() {
               const task = await createTask(title);
               marker('M5_ACTIVE_COMPLETED');
               return task;
+            };
+          }
+
+          if (MODE === KEEP_ALIVE_MODE) {
+            const taskService = app.get(TaskService);
+            const createTask = taskService.create.bind(taskService);
+            taskService.create = (title) => {
+              marker('M5_BUSINESS_ENTERED');
+              return createTask(title);
             };
           }
         },
