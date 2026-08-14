@@ -95,7 +95,9 @@ async function readWorkflowJobs() {
     const workflow = await readFile(workflowFile, 'utf8');
     const jobsSection = workflow.split(/^jobs:\s*$/mu)[1];
     assert.ok(jobsSection, workflowFile);
-    for (const match of jobsSection.matchAll(/^  ([a-z][a-z0-9-]+):\s*$/gmu)) {
+    for (const match of jobsSection.matchAll(
+      /^ {2}([a-z][a-z0-9-]+):\s*$/gmu,
+    )) {
       jobs.add(match[1]);
     }
   }
