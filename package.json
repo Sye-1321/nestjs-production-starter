@@ -24,7 +24,8 @@
     "pretest:e2e": "npm run build",
     "test:e2e": "node test/support/run-postgresql-suite.mjs \"test/e2e/*.test.mjs\"",
     "pretest:process": "npm run build",
-    "test:process": "node test/process/run-process-tests.mjs"
+    "test:process": "node test/process/run-process-tests.mjs",
+    "test:container": "node test/container/run-container-tests.mjs"
   },
   "dependencies": {
     "@nestjs/common": "11.1.28",
