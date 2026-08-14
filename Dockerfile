@@ -18,7 +18,10 @@ FROM ${NODE_IMAGE} AS production-dependencies
 WORKDIR /app
 
 COPY package.json package-lock.json .npmrc ./
-RUN npm ci --omit=dev --ignore-scripts \
+RUN npm ci --omit=dev --omit=peer --ignore-scripts \
+  && npm pkg delete devDependencies \
+  && rm -rf node_modules/prisma node_modules/typescript \
+  && npm prune --omit=dev --omit=peer --ignore-scripts \
   && npm cache clean --force
 
 FROM ${NODE_IMAGE} AS runtime
