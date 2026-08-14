@@ -23,7 +23,11 @@ import { Lifecycle } from './lifecycle.js';
 import { ShutdownCoordinator } from './shutdown-coordinator.js';
 
 export interface BootstrapProcessTestSeam {
-  afterSignalHandlersInstalled(isBooting: () => boolean): Promise<void>;
+  afterSignalHandlersInstalled?(isBooting: () => boolean): Promise<void>;
+  afterApplicationInitialized?(
+    app: INestApplication,
+    lifecycle: Lifecycle,
+  ): Promise<void>;
 }
 
 export interface BootstrapOptions {
@@ -77,7 +81,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
   coordinator.installSignalHandlers();
 
   try {
-    await options.processTestSeam?.afterSignalHandlersInstalled(() =>
+    await options.processTestSeam?.afterSignalHandlersInstalled?.(() =>
       isBooting(lifecycle),
     );
 
@@ -123,6 +127,11 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
     app.useGlobalPipes(strictValidationPipe);
     app.useGlobalFilters(problemDetailsExceptionFilter);
     await app.init();
+
+    await options.processTestSeam?.afterApplicationInitialized?.(
+      app,
+      lifecycle,
+    );
 
     if (!isBooting(lifecycle)) {
       return;

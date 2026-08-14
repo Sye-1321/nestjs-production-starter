@@ -26,6 +26,13 @@ export const ERROR_LOG_CANARY_FIXTURE = path.join(
   'support',
   'error-log-canary-fixture.mjs',
 );
+export const SHUTDOWN_FIXTURE = path.join(
+  REPOSITORY_ROOT,
+  'test',
+  'process',
+  'support',
+  'shutdown-fixture.mjs',
+);
 
 export const STARTUP_WAIT_MS = 20_000;
 export const EXIT_WAIT_MS = 10_000;
@@ -108,12 +115,12 @@ export function validEnvironment(port, overrides = {}) {
   );
 }
 
-export function spawnEntry(entry, environment) {
+export function spawnEntry(entry, environment, { input = false } = {}) {
   const child = spawn(process.execPath, [entry], {
     cwd: REPOSITORY_ROOT,
     env: environment,
     shell: false,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: [input ? 'pipe' : 'ignore', 'pipe', 'pipe'],
   });
   child.once('error', (error) => {
     output += `PROCESS_TEST_CHILD_SPAWN_ERROR:${error.message}\n`;
@@ -309,6 +316,7 @@ export async function waitForStatus(
   pathname,
   statusCode,
   timeoutMs = STARTUP_WAIT_MS,
+  output = () => '',
 ) {
   const deadline = Date.now() + timeoutMs;
 
@@ -326,7 +334,10 @@ export async function waitForStatus(
   }
 
   throw new Error(
-    `${pathname} did not return ${String(statusCode)} within ${String(timeoutMs)} ms`,
+    [
+      `${pathname} did not return ${String(statusCode)} within ${String(timeoutMs)} ms`,
+      `capturedOutput=${JSON.stringify(output())}`,
+    ].join('; '),
   );
 }
 
