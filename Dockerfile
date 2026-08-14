@@ -28,7 +28,9 @@ FROM ${NODE_IMAGE} AS runtime
 
 RUN apt-get update \
   && apt-get install --yes --no-install-recommends dumb-init=1.2.5-2 \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -rf /usr/local/lib/node_modules/npm \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx
 
 ENV NODE_ENV=production
 WORKDIR /app

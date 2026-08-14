@@ -27,6 +27,8 @@ test('final image is non-root, signal-correct, and contains runtime material onl
     await runInImage(['/usr/bin/dumb-init', '--version']),
     /dumb-init v1\.2\.5/u,
   );
+  assert.equal(await runInImage(['sh', '-c', 'command -v npm || true']), '');
+  assert.equal(await runInImage(['sh', '-c', 'command -v npx || true']), '');
 
   const forbiddenMaterial = await runInImage([
     'sh',
