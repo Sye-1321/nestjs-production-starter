@@ -26,11 +26,16 @@ test image were removed after a clean status check.
 | `npm run test:container`   | PASS   | 2 passed; final-image SIGTERM drain about 3.79 seconds |
 
 The six process skips are limited to tests declared
-`requires authoritative Linux SIGTERM`. They are not unexplained or waived:
-the complete Linux process suite passed during M5 acceptance, the required
-`process` CI job runs on Ubuntu 24.04, and the M7 final-container test exercised
-real Linux PID 1/SIGTERM behavior. The Windows clean run still executed every
-non-POSIX process case.
+`requires authoritative Linux SIGTERM`. They are not unexplained or waived: the
+required `process` CI job runs on Ubuntu 24.04, and the M7 final-container test
+exercised real Linux PID 1/SIGTERM behavior. The Windows clean run still executed
+every non-POSIX process case.
+
+The first post-release Linux run exposed that the standalone process harness had
+not externally migrated its fresh database before the active-drain test attempted
+a real Task insert. The follow-up correction makes that external deployment
+explicit. Release acceptance requires the corrected Linux `process` job to be
+green; the Windows skips and container signal test do not substitute for it.
 
 The clean-checkout exercise found and corrected two release-harness defects
 before the accepted run: lint now generates the ignored Prisma client, and the
