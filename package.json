@@ -10,6 +10,7 @@
   "scripts": {
     "prebuild": "npm run prisma:generate",
     "build": "tsc -p tsconfig.build.json",
+    "start:prod": "node dist/main.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",

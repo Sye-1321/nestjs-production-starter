@@ -1,0 +1,15 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+dist
+docs
+node_modules
+test
+
+*.log
+*.tsbuildinfo
+Dockerfile*
+README.md
+compose*.yaml
