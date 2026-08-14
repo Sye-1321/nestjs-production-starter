@@ -3,6 +3,7 @@ import process from 'node:process';
 import { BootstrapLogger } from '../../../dist/bootstrap/bootstrap-logger.js';
 import { bootstrap } from '../../../dist/bootstrap/bootstrap.js';
 import { parseEnvironment } from '../../../dist/config/env.validation.js';
+import { RequestContextStorage } from '../../../dist/platform/context/request-context.js';
 import { DatabaseService } from '../../../dist/platform/database/database.service.js';
 import { TaskService } from '../../../dist/task/task.service.js';
 
@@ -11,6 +12,9 @@ const ACTIVE_MODE = 'active';
 const KEEP_ALIVE_MODE = 'keep-alive';
 const FORCE_ACTIVE_MODE = 'force-active';
 const FORCE_CLEANUP_MODE = 'force-cleanup';
+const NATIVE_ABORT_MODE = 'native-abort';
+const DISCONNECT_TITLE = 'M5 disconnect request';
+const NORMAL_TITLE = 'M5 normal keepalive request';
 
 const neverSettles = new Promise(() => undefined);
 
@@ -18,17 +22,17 @@ function marker(name) {
   process.stdout.write(`${name}\n`);
 }
 
-function activeRelease() {
+function releaseCommand(expectedCommand, releasedMarker) {
   return new Promise((resolve, reject) => {
     process.stdin.setEncoding('utf8');
     process.stdin.once('error', reject);
     process.stdin.once('data', (data) => {
-      if (data.trim() !== 'RELEASE_ACTIVE') {
-        reject(new Error('Unexpected active-work release command'));
+      if (data.trim() !== expectedCommand) {
+        reject(new Error('Unexpected work release command'));
         return;
       }
 
-      marker('M5_ACTIVE_RELEASED');
+      marker(releasedMarker);
       resolve();
     });
   });
@@ -74,7 +78,7 @@ async function run() {
               if (MODE === FORCE_ACTIVE_MODE) {
                 await neverSettles;
               } else {
-                await activeRelease();
+                await releaseCommand('RELEASE_ACTIVE', 'M5_ACTIVE_RELEASED');
               }
 
               const task = await createTask(title);
@@ -88,6 +92,74 @@ async function run() {
             const createTask = taskService.create.bind(taskService);
             taskService.create = (title) => {
               marker('M5_BUSINESS_ENTERED');
+              return createTask(title);
+            };
+          }
+
+          if (MODE === NATIVE_ABORT_MODE) {
+            const contextStorage = app.get(RequestContextStorage);
+            const taskService = app.get(TaskService);
+            const createTask = taskService.create.bind(taskService);
+            taskService.create = async (title) => {
+              const requestContext = contextStorage.get();
+              if (requestContext === undefined) {
+                throw new Error('Native-abort fixture has no request context');
+              }
+
+              if (title === DISCONNECT_TITLE) {
+                marker('M5_DISCONNECT_WORK_ENTERED');
+                let abortRecorded = false;
+                const recordAbort = () => {
+                  if (abortRecorded) {
+                    return;
+                  }
+
+                  abortRecorded = true;
+                  marker('M5_DISCONNECT_ABORTED');
+                };
+
+                if (requestContext.abortSignal.aborted) {
+                  recordAbort();
+                } else {
+                  requestContext.abortSignal.addEventListener(
+                    'abort',
+                    recordAbort,
+                    { once: true },
+                  );
+                  if (requestContext.abortSignal.aborted) {
+                    recordAbort();
+                  }
+                }
+                await releaseCommand(
+                  'RELEASE_ABORT',
+                  'M5_DISCONNECT_WORK_RELEASED',
+                );
+                const task = await createTask(title);
+                marker('M5_DISCONNECT_WORK_COMPLETED');
+                return task;
+              }
+
+              if (title === NORMAL_TITLE) {
+                let completed = false;
+                marker('M5_NORMAL_WORK_ENTERED');
+                if (!requestContext.abortSignal.aborted) {
+                  requestContext.abortSignal.addEventListener(
+                    'abort',
+                    () =>
+                      marker(
+                        completed
+                          ? 'M5_NORMAL_ABORTED_AFTER_COMPLETION'
+                          : 'M5_NORMAL_ABORTED_DURING_WORK',
+                      ),
+                    { once: true },
+                  );
+                }
+                const task = await createTask(title);
+                completed = true;
+                marker('M5_NORMAL_WORK_COMPLETED');
+                return task;
+              }
+
               return createTask(title);
             };
           }

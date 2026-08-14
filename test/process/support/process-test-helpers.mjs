@@ -387,7 +387,12 @@ export async function waitForOutput(output, marker, timeoutMs) {
     await delay(POLL_INTERVAL_MS);
   }
 
-  throw new Error('Child did not emit expected process-test marker');
+  throw new Error(
+    [
+      `Child did not emit process-test marker ${marker}`,
+      `capturedOutput=${JSON.stringify(output())}`,
+    ].join('; '),
+  );
 }
 
 export function structuredEvents(output, eventName) {
