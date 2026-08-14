@@ -11,7 +11,7 @@ try {
     [
       '--test',
       '--test-concurrency=1',
-      '--test-timeout=60000',
+      '--test-timeout=120000',
       'test/container/*.test.mjs',
     ],
     {

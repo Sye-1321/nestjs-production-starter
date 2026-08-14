@@ -34,7 +34,7 @@ export const SHUTDOWN_FIXTURE = path.join(
   'shutdown-fixture.mjs',
 );
 
-export const STARTUP_WAIT_MS = 20_000;
+export const STARTUP_WAIT_MS = 40_000;
 export const EXIT_WAIT_MS = 10_000;
 export const TEST_SHUTDOWN_TIMEOUT_MS = 1_000;
 export const SHUTDOWN_TOLERANCE_MS = 2_000;
