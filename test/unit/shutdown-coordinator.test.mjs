@@ -15,14 +15,37 @@ function deferred() {
   return { promise, resolve };
 }
 
+function controlledDeadlineScheduler() {
+  const deadlines = [];
+
+  return {
+    deadlines,
+    schedule(callback, delayMs) {
+      const deadline = { callback, delayMs, cancelled: false };
+      deadlines.push(deadline);
+      return {
+        cancel() {
+          deadline.cancelled = true;
+        },
+      };
+    },
+    fire(index = 0) {
+      deadlines[index].callback();
+    },
+  };
+}
+
 test('first shutdown request enters DRAINING synchronously and records one absolute deadline', async () => {
   const lifecycle = new Lifecycle();
   const execution = deferred();
+  const deadlineScheduler = controlledDeadlineScheduler();
   const contexts = [];
   const coordinator = new ShutdownCoordinator({
     lifecycle,
     shutdownTimeoutMs: 10_000,
     now: () => 1_000,
+    forceShutdown: () => undefined,
+    scheduleDeadline: deadlineScheduler.schedule,
     executeShutdown: async (context) => {
       contexts.push(context);
       await execution.promise;
@@ -33,6 +56,9 @@ test('first shutdown request enters DRAINING synchronously and records one absol
 
   assert.equal(lifecycle.state, 'DRAINING');
   assert.equal(coordinator.shutdownDeadlineAt, 11_000);
+  assert.equal(deadlineScheduler.deadlines.length, 1);
+  assert.equal(deadlineScheduler.deadlines[0].delayMs, 10_000);
+  assert.equal(deadlineScheduler.deadlines[0].cancelled, false);
 
   await Promise.resolve();
   assert.deepEqual(contexts, [{ signal: 'SIGTERM', deadlineAt: 11_000 }]);
@@ -40,17 +66,21 @@ test('first shutdown request enters DRAINING synchronously and records one absol
   execution.resolve();
   await shutdown;
   assert.equal(lifecycle.state, 'STOPPED');
+  assert.equal(deadlineScheduler.deadlines[0].cancelled, true);
 });
 
 test('repeated shutdown requests preserve the original deadline and sequence', async () => {
   const lifecycle = new Lifecycle();
   const execution = deferred();
+  const deadlineScheduler = controlledDeadlineScheduler();
   let now = 5_000;
   let executions = 0;
   const coordinator = new ShutdownCoordinator({
     lifecycle,
     shutdownTimeoutMs: 2_000,
     now: () => now,
+    forceShutdown: () => undefined,
+    scheduleDeadline: deadlineScheduler.schedule,
     executeShutdown: async () => {
       executions += 1;
       await execution.promise;
@@ -66,6 +96,7 @@ test('repeated shutdown requests preserve the original deadline and sequence', a
   assert.strictEqual(third, first);
   assert.equal(coordinator.shutdownDeadlineAt, 7_000);
   assert.equal(lifecycle.state, 'DRAINING');
+  assert.equal(deadlineScheduler.deadlines.length, 1);
 
   await Promise.resolve();
   assert.equal(executions, 1);
@@ -76,12 +107,62 @@ test('repeated shutdown requests preserve the original deadline and sequence', a
   assert.equal(lifecycle.state, 'STOPPED');
 });
 
+test('deadline force executes once while shutdown remains incomplete', async () => {
+  const lifecycle = new Lifecycle();
+  const execution = deferred();
+  const deadlineScheduler = controlledDeadlineScheduler();
+  const forcedContexts = [];
+  const coordinator = new ShutdownCoordinator({
+    lifecycle,
+    shutdownTimeoutMs: 3_000,
+    now: () => 7_000,
+    executeShutdown: () => execution.promise,
+    forceShutdown: (context) => forcedContexts.push(context),
+    scheduleDeadline: deadlineScheduler.schedule,
+  });
+
+  const shutdown = coordinator.requestShutdown('SIGTERM');
+  await Promise.resolve();
+  deadlineScheduler.fire();
+  deadlineScheduler.fire();
+
+  assert.deepEqual(forcedContexts, [{ signal: 'SIGTERM', deadlineAt: 10_000 }]);
+  assert.equal(lifecycle.state, 'DRAINING');
+
+  execution.resolve();
+  await shutdown;
+  assert.equal(lifecycle.state, 'DRAINING');
+});
+
+test('completed shutdown cannot be forced by a stale deadline callback', async () => {
+  const lifecycle = new Lifecycle();
+  const deadlineScheduler = controlledDeadlineScheduler();
+  let forceCount = 0;
+  const coordinator = new ShutdownCoordinator({
+    lifecycle,
+    shutdownTimeoutMs: 500,
+    executeShutdown: () => Promise.resolve(),
+    forceShutdown: () => {
+      forceCount += 1;
+    },
+    scheduleDeadline: deadlineScheduler.schedule,
+  });
+
+  await coordinator.requestShutdown('SIGINT');
+  deadlineScheduler.fire();
+
+  assert.equal(deadlineScheduler.deadlines[0].cancelled, true);
+  assert.equal(forceCount, 0);
+  assert.equal(lifecycle.state, 'STOPPED');
+});
+
 test('SIGTERM and SIGINT converge on the same shutdown sequence', async () => {
   const lifecycle = new Lifecycle();
   const coordinator = new ShutdownCoordinator({
     lifecycle,
     shutdownTimeoutMs: 1_000,
     now: () => 100,
+    forceShutdown: () => undefined,
     executeShutdown: () => Promise.resolve(),
   });
 
@@ -100,6 +181,7 @@ test('signal handler installation is idempotent and removable', (t) => {
   const coordinator = new ShutdownCoordinator({
     lifecycle,
     shutdownTimeoutMs: 1_000,
+    forceShutdown: () => undefined,
     executeShutdown: () => Promise.resolve(),
   });
   const sigtermBefore = process.listenerCount('SIGTERM');
@@ -128,6 +210,7 @@ test('installed SIGTERM and SIGINT handlers converge on the same sequence', asyn
     lifecycle,
     shutdownTimeoutMs: 1_000,
     now: () => 50,
+    forceShutdown: () => undefined,
     executeShutdown: async () => {
       executions += 1;
       await execution.promise;
@@ -170,6 +253,7 @@ test('successful shutdown execution transitions lifecycle to STOPPED', async () 
   const coordinator = new ShutdownCoordinator({
     lifecycle,
     shutdownTimeoutMs: 1_000,
+    forceShutdown: () => undefined,
     executeShutdown: async () => {
       executions += 1;
     },
@@ -183,10 +267,13 @@ test('successful shutdown execution transitions lifecycle to STOPPED', async () 
 
 test('signal-triggered shutdown rejection is observed exactly once', async (t) => {
   const lifecycle = new Lifecycle();
+  const deadlineScheduler = controlledDeadlineScheduler();
   const failures = [];
   const coordinator = new ShutdownCoordinator({
     lifecycle,
     shutdownTimeoutMs: 1_000,
+    forceShutdown: () => undefined,
+    scheduleDeadline: deadlineScheduler.schedule,
     executeShutdown: async () => {
       throw new Error('shutdown failed');
     },

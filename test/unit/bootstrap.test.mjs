@@ -11,7 +11,10 @@ function captureLogger() {
   const lines = [];
   return {
     lines,
-    logger: new BootstrapLogger((line) => lines.push(line)),
+    logger: new BootstrapLogger(
+      (line) => lines.push(line),
+      (line) => lines.push(line),
+    ),
   };
 }
 
@@ -65,4 +68,25 @@ test('shutdown failure uses a distinct event identity', () => {
   assert.deepEqual(JSON.parse(captured.lines[0]), {
     event: 'shutdown_failed',
   });
+});
+
+test('forced shutdown uses a distinct synchronous event identity', () => {
+  const captured = captureLogger();
+
+  captured.logger.forcedShutdown();
+
+  assert.deepEqual(JSON.parse(captured.lines[0]), {
+    event: 'forced_shutdown',
+  });
+});
+
+test('forced shutdown logging remains best effort when its writer fails', () => {
+  const logger = new BootstrapLogger(
+    () => undefined,
+    () => {
+      throw new Error('stderr unavailable');
+    },
+  );
+
+  assert.doesNotThrow(() => logger.forcedShutdown());
 });

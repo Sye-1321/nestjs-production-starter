@@ -9,27 +9,54 @@ export interface ShutdownContext {
 
 export type ShutdownExecution = (context: ShutdownContext) => Promise<void>;
 export type ShutdownFailureHandler = (error: unknown) => void;
+export type ForcedShutdownHandler = (context: ShutdownContext) => void;
 
 type Clock = () => number;
+
+interface DeadlineTimer {
+  cancel(): void;
+}
+
+type DeadlineScheduler = (
+  callback: () => void,
+  delayMs: number,
+) => DeadlineTimer;
+
+const scheduleDeadline: DeadlineScheduler = (callback, delayMs) => {
+  const timer = setTimeout(callback, delayMs);
+
+  return {
+    cancel(): void {
+      clearTimeout(timer);
+    },
+  };
+};
 
 export interface ShutdownCoordinatorOptions {
   readonly lifecycle: Lifecycle;
   readonly shutdownTimeoutMs: number;
   readonly executeShutdown: ShutdownExecution;
+  readonly forceShutdown: ForcedShutdownHandler;
   readonly onShutdownFailure?: ShutdownFailureHandler;
   readonly now?: Clock;
+  readonly scheduleDeadline?: DeadlineScheduler;
 }
 
 export class ShutdownCoordinator {
   private readonly lifecycle: Lifecycle;
   private readonly shutdownTimeoutMs: number;
   private readonly executeShutdown: ShutdownExecution;
+  private readonly forceShutdown: ForcedShutdownHandler;
   private readonly onShutdownFailure: ShutdownFailureHandler;
   private readonly now: Clock;
+  private readonly scheduleDeadline: DeadlineScheduler;
 
   private handlersInstalled = false;
   private signalFailureObserved = false;
+  private shutdownCompleted = false;
+  private forceTriggered = false;
   private deadlineAt: number | undefined;
+  private deadlineTimer: DeadlineTimer | undefined;
   private shutdownSequence: Promise<void> | undefined;
 
   private readonly sigtermHandler = (): void => {
@@ -44,8 +71,10 @@ export class ShutdownCoordinator {
     this.lifecycle = options.lifecycle;
     this.shutdownTimeoutMs = options.shutdownTimeoutMs;
     this.executeShutdown = options.executeShutdown;
+    this.forceShutdown = options.forceShutdown;
     this.onShutdownFailure = options.onShutdownFailure ?? (() => undefined);
     this.now = options.now ?? Date.now;
+    this.scheduleDeadline = options.scheduleDeadline ?? scheduleDeadline;
   }
 
   public get shutdownDeadlineAt(): number | undefined {
@@ -84,8 +113,19 @@ export class ShutdownCoordinator {
     this.deadlineAt = deadlineAt;
 
     const context: ShutdownContext = Object.freeze({ signal, deadlineAt });
+    this.deadlineTimer = this.scheduleDeadline(() => {
+      this.forceAtDeadline(context);
+    }, this.shutdownTimeoutMs);
+
     const sequence = Promise.resolve().then(async () => {
       await this.executeShutdown(context);
+
+      if (this.forceTriggered) {
+        return;
+      }
+
+      this.shutdownCompleted = true;
+      this.deadlineTimer?.cancel();
       this.lifecycle.markStopped();
     });
 
@@ -111,5 +151,14 @@ export class ShutdownCoordinator {
     void sequence.catch((error: unknown) => {
       this.onShutdownFailure(error);
     });
+  }
+
+  private forceAtDeadline(context: ShutdownContext): void {
+    if (this.shutdownCompleted || this.forceTriggered) {
+      return;
+    }
+
+    this.forceTriggered = true;
+    this.forceShutdown(context);
   }
 }

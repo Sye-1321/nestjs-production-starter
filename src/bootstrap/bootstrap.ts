@@ -63,6 +63,11 @@ export async function bootstrap(options: BootstrapOptions): Promise<void> {
       await preListenSettled;
       await closeApplicationResources(server, app);
     },
+    forceShutdown: () => {
+      server?.closeAllConnections();
+      options.logger.forcedShutdown();
+      process.exit(1);
+    },
     onShutdownFailure: () => {
       options.logger.shutdownFailed();
       process.exitCode = 1;

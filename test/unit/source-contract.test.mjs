@@ -56,6 +56,31 @@ test('production source does not use successful process.exit(0)', async () => {
   }
 });
 
+test('production shutdown escalation is singular and force-only', async () => {
+  const bootstrapSource = await readFile(
+    path.join(SOURCE_ROOT, 'bootstrap', 'bootstrap.ts'),
+    'utf8',
+  );
+  const closeAllMatches = bootstrapSource.match(/\.closeAllConnections\(\)/gu);
+  const closeAllIndex = bootstrapSource.indexOf(
+    'server?.closeAllConnections();',
+  );
+  const forcedLogIndex = bootstrapSource.indexOf(
+    'options.logger.forcedShutdown();',
+  );
+  const forceExitIndex = bootstrapSource.indexOf('process.exit(1);');
+
+  assert.equal(closeAllMatches?.length, 1);
+  assert.ok(closeAllIndex >= 0);
+  assert.ok(forcedLogIndex > closeAllIndex);
+  assert.ok(forceExitIndex > forcedLogIndex);
+
+  for (const sourcePath of await productionSources()) {
+    const source = await readFile(sourcePath, 'utf8');
+    assert.doesNotMatch(source, /\.closeIdleConnections\(\)/u);
+  }
+});
+
 test('ShutdownCoordinator is the only production SIGTERM/SIGINT listener owner', async () => {
   const listenerPattern =
     /process\.(?:on|once|addListener|prependListener|prependOnceListener)\(\s*['"](SIGTERM|SIGINT)['"]/gu;
