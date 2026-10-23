@@ -12,7 +12,7 @@ test('final image source pins the approved runtime and preserves the runtime-onl
 
   assert.match(
     dockerfile,
-    /^ARG NODE_IMAGE=node:24\.19\.0-bookworm-slim@sha256:[a-f0-9]{64}$/mu,
+    /^ARG NODE_IMAGE=node:24\.22\.1-bookworm-slim@sha256:[a-f0-9]{64}$/mu,
   );
   assert.equal([...dockerfile.matchAll(/^FROM /gmu)].length, 3);
   assert.equal([...dockerfile.matchAll(/^FROM \$\{NODE_IMAGE\}/gmu)].length, 3);
