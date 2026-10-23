@@ -9,10 +9,31 @@ updates:
       time: '06:00'
       timezone: Africa/Nairobi
     open-pull-requests-limit: 10
-    # Routine updates may be grouped. Version-sensitive dependencies stay
-    # individual so their contract evidence is reviewed with the version bump.
+    # Related version updates are grouped before routine catch-all groups so
+    # first-match behavior keeps each compatibility surface together.
     groups:
+      nestjs-framework:
+        applies-to: version-updates
+        update-types: [minor, patch]
+        patterns:
+          - '@nestjs/common'
+          - '@nestjs/core'
+          - '@nestjs/platform-express'
+      prisma-stack:
+        applies-to: version-updates
+        update-types: [minor, patch]
+        patterns:
+          - '@prisma/adapter-pg'
+          - '@prisma/client'
+          - prisma
+      testcontainers:
+        applies-to: version-updates
+        update-types: [minor, patch]
+        patterns:
+          - '@testcontainers/postgresql'
+          - testcontainers
       routine-production-maintenance:
+        applies-to: version-updates
         dependency-type: production
         update-types:
           - minor
@@ -23,6 +44,7 @@ updates:
           - '@prisma/*'
           - pg
       routine-development-maintenance:
+        applies-to: version-updates
         dependency-type: development
         update-types:
           - minor
@@ -58,3 +80,9 @@ updates:
       time: '06:30'
       timezone: Africa/Nairobi
     open-pull-requests-limit: 5
+    groups:
+      codeql-actions:
+        applies-to: version-updates
+        patterns:
+          - github/codeql-action/init
+          - github/codeql-action/analyze

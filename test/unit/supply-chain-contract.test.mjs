@@ -106,22 +106,78 @@ test('dependency automation keeps compatibility-sensitive updates explicit', asy
     '  - package-ecosystem: github-actions',
   );
 
-  assert.match(npmUpdates, /routine-production-maintenance/u);
-  assert.match(npmUpdates, /routine-development-maintenance/u);
-  assert.equal([...npmUpdates.matchAll(/^\s+update-types:$/gmu)].length, 2);
-  assert.equal([...npmUpdates.matchAll(/^\s+- minor$/gmu)].length, 2);
-  assert.equal([...npmUpdates.matchAll(/^\s+- patch$/gmu)].length, 2);
+  const npmGroupNames = [
+    'nestjs-framework',
+    'prisma-stack',
+    'testcontainers',
+    'routine-production-maintenance',
+    'routine-development-maintenance',
+  ];
+  for (let index = 1; index < npmGroupNames.length; index += 1) {
+    assert.ok(
+      npmUpdates.indexOf(`${npmGroupNames[index - 1]}:`) <
+        npmUpdates.indexOf(`${npmGroupNames[index]}:`),
+    );
+  }
 
+  const specificGroups = [
+    [
+      'nestjs-framework',
+      'prisma-stack',
+      ['@nestjs/common', '@nestjs/core', '@nestjs/platform-express'],
+    ],
+    [
+      'prisma-stack',
+      'testcontainers',
+      ['@prisma/adapter-pg', '@prisma/client', 'prisma'],
+    ],
+    [
+      'testcontainers',
+      'routine-production-maintenance',
+      ['@testcontainers/postgresql', 'testcontainers'],
+    ],
+  ];
+  for (const [groupName, nextGroupName, dependencies] of specificGroups) {
+    const group = section(npmUpdates, groupName, nextGroupName);
+    assert.match(group, /^\s+applies-to: version-updates$/mu);
+    assert.match(group, /^\s+update-types: \[minor, patch\]$/mu);
+    for (const dependency of dependencies) {
+      assert.match(
+        group,
+        new RegExp(`- '?${escapeRegex(dependency)}'?$`, 'mu'),
+      );
+    }
+  }
+
+  const productionGroup = section(
+    npmUpdates,
+    'routine-production-maintenance',
+    'routine-development-maintenance',
+  );
+  assert.match(productionGroup, /dependency-type: production/u);
+  assert.match(productionGroup, /update-types:\s+- minor\s+- patch/u);
+  assert.match(productionGroup, /patterns:\s+- '\*'/u);
+  assert.match(productionGroup, /exclude-patterns:\s+- '@prisma\/\*'\s+- pg/u);
+
+  const developmentGroup = section(
+    npmUpdates,
+    'routine-development-maintenance',
+    'ignore',
+  );
+  assert.match(developmentGroup, /dependency-type: development/u);
+  assert.match(developmentGroup, /update-types:\s+- minor\s+- patch/u);
+  assert.match(developmentGroup, /patterns:\s+- '\*'/u);
   for (const dependency of [
-    "'@prisma/*'",
-    "'@testcontainers/*'",
-    "'@types/node'",
-    'pg',
+    '@testcontainers/*',
+    '@types/node',
     'prisma',
     'testcontainers',
     'typescript',
   ]) {
-    assert.match(npmUpdates, new RegExp(`- ${escapeRegex(dependency)}$`, 'mu'));
+    assert.match(
+      developmentGroup,
+      new RegExp(`- '?${escapeRegex(dependency)}'?$`, 'mu'),
+    );
   }
 
   assert.match(
@@ -129,7 +185,13 @@ test('dependency automation keeps compatibility-sensitive updates explicit', asy
     /dependency-name: '@types\/node'\s+versions:\s+- '>=25'/u,
   );
   assert.doesNotMatch(dockerUpdates, /^\s+groups:/mu);
-  assert.doesNotMatch(actionsUpdates, /^\s+groups:/mu);
+
+  const codeqlGroup = section(actionsUpdates, 'codeql-actions');
+  assert.match(codeqlGroup, /^\s+applies-to: version-updates$/mu);
+  assert.match(
+    codeqlGroup,
+    /patterns:\s+- github\/codeql-action\/init\s+- github\/codeql-action\/analyze/u,
+  );
 });
 
 test('Trivy reports every severe finding and blocks only fixable severe findings', async () => {
@@ -201,4 +263,17 @@ async function exists(relativePath) {
 
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+function section(source, name, nextName) {
+  const start = source.indexOf(`      ${name}:`);
+  assert.notEqual(start, -1, name);
+  const contentStart = start + `      ${name}:`.length;
+  const nextMarker =
+    nextName === 'ignore' ? '    ignore:' : `      ${nextName}:`;
+  const end = nextName
+    ? source.indexOf(nextMarker, contentStart)
+    : source.length;
+  assert.notEqual(end, -1, nextName);
+  return source.slice(contentStart, end);
 }
