@@ -271,7 +271,7 @@ test('HTTP dependency policy preserves Express and pins Helmet directly', async 
     await readFile(path.join(REPOSITORY_ROOT, 'package.json'), 'utf8'),
   );
 
-  assert.equal(packageJson.dependencies['@nestjs/platform-express'], '11.1.28');
+  assert.equal(packageJson.dependencies['@nestjs/platform-express'], '11.2.7');
   assert.equal(packageJson.dependencies.helmet, '8.3.0');
   assert.equal('@nestjs/platform-fastify' in packageJson.dependencies, false);
 });

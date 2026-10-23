@@ -85,7 +85,7 @@ runtime model.
 
 Prerequisites:
 
-- Node.js `24.19.0`
+- Node.js `24.22.1`
 - npm `11.17.0`
 - Docker using Linux containers
 
@@ -151,9 +151,9 @@ not-found, recognized dependency, and unexpected failures cross a stable RFC
 The stable `v1.0.0` baseline uses:
 
 - Node.js policy: `>=24.16.0 <25`
-- development and CI patch: `24.19.0`
+- development and CI patch: `24.22.1`
 - npm: `11.17.0`
-- NestJS: `11.1.28` with Express
+- NestJS: `11.2.7` with Express
 - Prisma: `7.9.1` with `@prisma/adapter-pg`
 - PostgreSQL test and local image: `18.4-bookworm`
 - strict TypeScript, ESM, and `NodeNext` resolution

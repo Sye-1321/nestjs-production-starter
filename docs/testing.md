@@ -8,7 +8,7 @@ behavior.
 
 ## Prerequisites
 
-- Node.js 24.19.0 and npm 11.17.0;
+- Node.js 24.22.1 and npm 11.17.0;
 - a running Docker engine using Linux containers;
 - enough local capacity to start PostgreSQL 18.4 Testcontainers;
 - network access for the initial PostgreSQL/base-image pull and vulnerability
