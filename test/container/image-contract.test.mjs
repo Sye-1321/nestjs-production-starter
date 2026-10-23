@@ -20,7 +20,7 @@ test('final image is non-root, signal-correct, and contains runtime material onl
   assert.equal(configuration.WorkingDir, '/app');
   assert.equal(configuration.Healthcheck, undefined);
 
-  assert.equal(await runInImage(['node', '--version']), 'v24.19.0');
+  assert.equal(await runInImage(['node', '--version']), 'v24.22.1');
   assert.equal(await runInImage(['id', '-u']), '1000');
   assert.equal(await runInImage(['id', '-g']), '1000');
   assert.match(

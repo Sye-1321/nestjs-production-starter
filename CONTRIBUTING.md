@@ -5,7 +5,7 @@ evidence hierarchy described in `docs/testing.md`.
 
 ## Runtime and install
 
-Use Node.js 24.19.0 and npm 11.17.0. Install only from the committed graph:
+Use Node.js 24.22.1 and npm 11.17.0. Install only from the committed graph:
 
 ```sh
 npm ci

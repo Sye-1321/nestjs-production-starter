@@ -29,7 +29,7 @@ host.
 
 ## Local startup
 
-Use Node.js 24.19.0 and npm 11.17.0.
+Use Node.js 24.22.1 and npm 11.17.0.
 
 ```sh
 npm ci

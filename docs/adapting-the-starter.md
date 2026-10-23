@@ -74,7 +74,7 @@ production constants:
 | Pool acquisition timeout                    | 1 s                                             | capacity, latency objective, overload behavior            |
 | PostgreSQL statement timeout                | 3 s                                             | query plans, workload, cancellation expectations          |
 | Application shutdown deadline               | 10 s                                            | longest admitted work and provider cleanup                |
-| Node runtime                                | `>=24.16.0 <25`; development/CI `24.19.0`       | supported APIs, LTS policy, base-image evidence           |
+| Node runtime                                | `>=24.16.0 <25`; development/CI `24.22.1`       | supported APIs, LTS policy, base-image evidence           |
 | PostgreSQL image                            | `18.4-bookworm`                                 | managed-service/runtime compatibility                     |
 | Prisma                                      | `7.9.1`                                         | adapter behavior and observed failure shapes              |
 | Prisma/PostgreSQL failure classifiers       | exact pinned shapes                             | every driver/ORM upgrade and real integration evidence    |
