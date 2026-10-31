@@ -14,8 +14,6 @@ This repository is an executable reference for those moments. It uses one small
 PostgreSQL-backed Task resource so the important part stays visible: how an HTTP
 service starts, reports health, handles failures, drains work, and shuts down.
 
-**The business logic is intentionally small. The failure semantics are not.**
-
 This is a reference to study and adapt, not a one-click generator, npm package,
 or claim that application code alone makes a system production-ready.
 
