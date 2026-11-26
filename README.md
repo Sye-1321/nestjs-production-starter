@@ -6,18 +6,15 @@
 [![Release](https://img.shields.io/github/v/release/Sye-1321/nestjs-production-starter)](https://github.com/Sye-1321/nestjs-production-starter/releases)
 [![License](https://img.shields.io/github/license/Sye-1321/nestjs-production-starter)](LICENSE)
 
-A NestJS service can compile, pass its happy-path tests, and still behave badly
-when configuration is invalid, PostgreSQL disappears, traffic is malformed, or
-the process receives `SIGTERM` while requests are active.
+This repository is an operational reference for a NestJS HTTP service. It
+includes a small PostgreSQL-backed Task API that demonstrates startup, health
+reporting, failure handling, request draining, and shutdown behavior.
 
-This repository is an executable reference for those moments. It uses one small
-PostgreSQL-backed Task resource so the important part stays visible: how an HTTP
-service starts, reports health, handles failures, drains work, and shuts down.
+It is intended to be studied and adapted rather than used as a general-purpose
+application template. Production readiness also depends on application and
+deployment requirements outside this repository.
 
-This is a reference to study and adapt, not a one-click generator, npm package,
-or claim that application code alone makes a system production-ready.
-
-## The problems it makes explicit
+## Features
 
 | Situation                                                            | Expected behavior                                                                                   | Evidence                                          |
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -29,10 +26,6 @@ or claim that application code alone makes a system production-ready.
 | Random unmatched paths reach the service                             | Keep metric labels bounded instead of creating one time series per path                             | Cardinality-focused E2E test                      |
 | The final image receives a real termination signal                   | Forward the signal through PID 1, drain naturally, and run without root or build tooling            | Final-image inspection and SIGTERM contract tests |
 
-Each claim is tested at the boundary it describes: PostgreSQL behavior uses real
-PostgreSQL, signal behavior uses real Linux processes, and image behavior uses
-the final runtime container.
-
 ## Lifecycle
 
 ```mermaid
@@ -40,6 +33,7 @@ stateDiagram-v2
   [*] --> BOOTING
   BOOTING --> READY: initialization, PostgreSQL probe, listen
   BOOTING --> FAILED_START: startup failure
+  BOOTING --> DRAINING: SIGTERM or SIGINT
   READY --> DRAINING: SIGTERM or SIGINT
   DRAINING --> STOPPED: listener and providers close
   DRAINING --> [*]: absolute deadline exceeded
@@ -121,7 +115,7 @@ Create a Task:
 ```sh
 curl -i -X POST http://127.0.0.1:3000/v1/tasks \
   -H 'content-type: application/json' \
-  -d '{"title":"Prove the production contract"}'
+  -d '{"title":"Review deployment configuration"}'
 ```
 
 Read it using the returned UUID:
@@ -150,6 +144,7 @@ The stable `v1.0.0` baseline uses:
 
 - Node.js policy: `>=24.16.0 <25`
 - development and CI patch: `24.22.1`
+- runtime image patch: `24.22.2`
 - npm: `11.17.0`
 - NestJS: `11.2.7` with Express
 - Prisma: `7.9.1` with `@prisma/adapter-pg`
@@ -157,8 +152,8 @@ The stable `v1.0.0` baseline uses:
 - strict TypeScript, ESM, and `NodeNext` resolution
 
 Application and development dependencies are exact in `package.json` and
-`package-lock.json`. The repository is `private: true` because it is an
-application reference, not a published package.
+`package-lock.json`. The npm package is marked `private: true` because this is
+an application reference, not a package intended for publication.
 
 | Variable                  | Required | Default or accepted range              |
 | ------------------------- | -------- | -------------------------------------- |
@@ -176,7 +171,7 @@ are reference policies, not universal defaults; adopters must reassess them
 against their own traffic, latency objectives, database capacity, and deployment
 grace periods.
 
-## Error, logging, and metrics boundaries
+## HTTP, logging and metrics
 
 - Strict DTO validation rejects unknown fields and malformed input.
 - Task writes require a JSON media type and use a `100 KiB` body limit.
@@ -194,7 +189,7 @@ The database boundary maps only failure shapes observed against the pinned
 Prisma and `pg` stack to dependency-unavailable `503` responses. Unknown failures
 remain sanitized `500` responses rather than being guessed to be transient.
 
-## Verification
+## Testing
 
 Start from an exact install:
 
@@ -224,7 +219,7 @@ external actions pinned to full commit SHAs.
 See [`docs/testing.md`](docs/testing.md) for the evidence hierarchy and how to
 interpret environment, timeout, process, and scanner failures.
 
-## Container contract
+## Docker
 
 Build the final image:
 
@@ -256,37 +251,31 @@ period longer than `SHUTDOWN_TIMEOUT_MS`.
 
 ## Adapting the starter
 
-Keep the operational foundations that match your service, replace the Task slice
-as one coherent domain change, and retest every guarantee after adaptation.
-
-At minimum, replacing Task means updating its module, controller, service,
+Keep the operational foundations that fit your service and replace the Task
+slice as one coherent domain change. Update its module, controller, service,
 repository, DTOs, errors, Prisma model, migration, metric, routes, tests, and
-traceability mappings together. Do not keep Task names around a different
-domain, and do not copy timeout or capacity values without measuring the new
-deployment.
+traceability mappings together. Retest the affected guarantees and reassess
+timeout and capacity values for the new deployment.
 
 [`docs/adapting-the-starter.md`](docs/adapting-the-starter.md) separates the
 foundations normally retained, the application-specific pieces to replace, and
 the policy values every adopter must reconsider.
 
-## Deliberate boundaries
+## Scope and limitations
 
-V1 does not add authentication, authorization, CORS, or proxy trust without an
-actual principal, browser, or deployment-topology requirement. It also avoids
-Redis, brokers, queues, GraphQL, CQRS, event sourcing, generic repositories,
-in-process migrations, Kubernetes, Helm, Terraform, a service mesh, and
-OpenTelemetry merely for appearance.
+Application-specific access control, client policies, and deployment-topology
+settings must be designed when adapting the starter.
 
 TLS termination, secret delivery, network policy, PostgreSQL backup and recovery,
 scheduling, and platform hardening remain deployment responsibilities. The
 repository documents these boundaries instead of implying that it supplies
 them.
 
-## Engineering evidence
+## Documentation
 
-The stable contract contains 122 normative requirements. Each maps to
-implementation, named evidence, and CI or manual ownership in
-[`docs/traceability.md`](docs/traceability.md).
+The behavioral specification is recorded in
+[`docs/spec/v1-contract.md`](docs/spec/v1-contract.md), with implementation and
+test coverage mapped in [`docs/traceability.md`](docs/traceability.md).
 
 - [`docs/spec/v1-contract.md`](docs/spec/v1-contract.md) — frozen behavioral
   contract
